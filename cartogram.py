@@ -62,9 +62,25 @@ def subdivide_tri_sphere(a, b, c, n):
     a1 = alpha
     a2 = (3 + 6*alpha - beta - 8*alpha*beta) / (2*beta - 3)
     a3 = 3 * (-2 - alpha + beta + 2*alpha*beta) / (2*beta - 3)
-    f = lambda x: a1*x + a2*x*x + a3*x*x*x
-    f_vec = lambda v: f(v) / sum(f(v))
+    def f(x):
+        return a1*x + a2*x*x + a3*x*x*x
+    def f_vec(v):
+        return f(v) / np.sum(f(v))
     bary_coords_new = np.apply_along_axis(f_vec, 1, bary_coords)
     verts = bary_coords_to_abc_plane(a, b, c, bary_coords_new)
     verts_nzd = np.apply_along_axis(nzd, 1, verts)
     return verts_nzd, tris
+
+
+def gradient_descent(
+        cost_func,
+        grad_cost_func,
+        initial_state,
+        normalize_func=lambda x: x,
+        learning_rate=0.05,
+        iteration_count=100):
+    state = initial_state.copy()
+    for i in range(iteration_count):
+        state -= learning_rate * grad_cost_func(state, i)
+        state = normalize_func(state)
+    return state
