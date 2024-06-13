@@ -72,6 +72,23 @@ def subdivide_tri_sphere(a, b, c, n):
     return verts_nzd, tris
 
 
+def tangent_space_matrix(verts, tri, clamp_to_sphere=False):
+    dim = verts.shape[-1]
+    assert dim == 2 or dim == 3
+    if dim == 2:
+        return np.identity(2)
+    
+    tolerance = 1e-12
+    a, b, c = verts[tri[0]], verts[tri[1]], verts[tri[2]]
+    assert vec_norm(np.cross(b-a, c-a)) >= tolerance
+    t = nzd(b - a)
+    n = nzd(np.cross(b-a, c-a))
+    if clamp_to_sphere and n @ a < 0:
+        n = -n
+    s = np.cross(n, t)
+    return np.column_stack([t, s, n])
+
+
 def gradient_descent(
         cost_func,
         grad_cost_func,
