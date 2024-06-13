@@ -72,14 +72,17 @@ def subdivide_tri_sphere(a, b, c, n):
     return verts_nzd, tris
 
 
-def tangent_space_matrix(verts, tri, clamp_to_sphere=False):
-    dim = verts.shape[-1]
+def this_tri_abc(verts, tri):
+    return verts[tri[0]], verts[tri[1]], verts[tri[2]]
+
+
+def tangent_space_matrix(a, b, c, clamp_to_sphere=False):
+    dim = a.shape[0]
     assert dim == 2 or dim == 3
     if dim == 2:
         return np.identity(2)
     
     tolerance = 1e-12
-    a, b, c = verts[tri[0]], verts[tri[1]], verts[tri[2]]
     assert vec_norm(np.cross(b-a, c-a)) >= tolerance
     t = nzd(b - a)
     n = nzd(np.cross(b-a, c-a))
@@ -87,6 +90,18 @@ def tangent_space_matrix(verts, tri, clamp_to_sphere=False):
         n = -n
     s = np.cross(n, t)
     return np.column_stack([t, s, n])
+
+
+# returns matrix that takes the vecs [1,0], [0,1] to b-a, c-a in tangent space
+def matrix_basis_vecs_to_tri(a, b, c, clamp_to_sphere=False):
+    dim = a.shape[0]
+    assert dim == 2 or dim == 3
+    if dim == 2:
+        return np.column_stack([b-a, c-a])
+
+    tan_space_mat = tangent_space_matrix(a, b, c, clamp_to_sphere)
+    tan_space_inv = tan_space_mat.T
+    return tan_space_inv[0:2] @ np.column_stack([b-a, c-a])
 
 
 def gradient_descent(
@@ -101,3 +116,12 @@ def gradient_descent(
         state -= learning_rate * grad_cost_func(state, i)
         state = normalize_func(state)
     return state
+
+
+OCTAHEDRON_TRI = (np.array([1, 0, 0]),
+                  np.array([0, 1, 0]),
+                  np.array([0, 0, 1]))
+phi = (1 + np.sqrt(5)) / 2
+ICOSAHEDRON_TRI = (nzd(np.array([1, 0, phi])),
+                   nzd(np.array([0, phi, 1])),
+                   nzd(np.array([-1, 0, phi])))
