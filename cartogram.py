@@ -1,4 +1,33 @@
 import numpy as np
+import matplotlib.pyplot as plt
+
+
+PHI = (1 + np.sqrt(5)) / 2
+OCTAHEDRON = (np.array([[1, 0, 0], [0, 1, 0],
+                        [0, 0, 1], [-1, 0, 0],
+                        [0, -1, 0], [0, 0, -1]]),
+              np.array([[0, 1, 2], [0, 2, 4],
+                        [0, 4, 5], [0, 5, 1],
+                        [1, 3, 2], [1, 5, 3],
+                        [2, 3, 4], [3, 5, 4]])
+              )
+ICOSAHEDRON = (np.array([[PHI, 1, 0], [-PHI, 1, 0],
+                         [-PHI, -1, 0], [PHI, -1, 0],
+                         [0, PHI, 1], [0, -PHI, 1],
+                         [0, -PHI, -1], [0, PHI, -1],
+                         [1, 0, PHI], [1, 0, -PHI],
+                         [-1, 0, -PHI], [-1, 0, PHI]]) / np.sqrt(PHI + 2),
+               np.array([[0, 3, 9], [0, 4, 8],
+                         [0, 7, 4], [0, 8, 3],
+                         [0, 9, 7], [1, 2, 11],
+                         [1, 4, 7], [1, 7, 10],
+                         [1, 10, 2], [1, 11, 4],
+                         [2, 5, 11], [2, 6, 5],
+                         [2, 10, 6], [3, 5, 6],
+                         [3, 6, 9], [3, 8, 5],
+                         [4, 11, 8], [5, 8, 11],
+                         [6, 10, 9], [7, 9, 10]])
+               )
 
 
 def matrix_times_array_of_vectors(matrix, vectors):
@@ -116,12 +145,3 @@ def gradient_descent(
         state -= learning_rate * grad_cost_func(state, i)
         state = normalize_func(state)
     return state
-
-
-OCTAHEDRON_TRI = (np.array([1, 0, 0]),
-                  np.array([0, 1, 0]),
-                  np.array([0, 0, 1]))
-phi = (1 + np.sqrt(5)) / 2
-ICOSAHEDRON_TRI = (nzd(np.array([1, 0, phi])),
-                   nzd(np.array([0, phi, 1])),
-                   nzd(np.array([-1, 0, phi])))
