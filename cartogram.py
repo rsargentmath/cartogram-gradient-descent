@@ -51,6 +51,18 @@ def subdivide_tri(a, b, c, n):
     return np.array(verts), np.array(tris)
 
 
+def tri_edge_vert_indices(n):
+    if n == 0:
+        return np.array([0])
+    edge_ixs = [0]
+    left_ix = 1
+    for i in range(1, n):
+        edge_ixs += [left_ix, left_ix + i]
+        left_ix += i + 1
+    edge_ixs += range(left_ix, left_ix + n + 1)
+    return np.array(edge_ixs)
+
+
 def vec_norm(v):
     return np.sqrt(v @ v)
 
@@ -79,7 +91,8 @@ def tri_scale_corrections(a, b, c):
 def bary_coords_to_abc_plane(a, b, c, barys):
     return matrix_times_array_of_vectors(np.column_stack([a, b, c]), barys)
     
-        
+
+# Approximation. Works best when abc is equilateral.        
 def subdivide_tri_sphere(a, b, c, n):
     bary_coords, tris = subdivide_tri(
         np.array([1, 0, 0]),
@@ -101,8 +114,49 @@ def subdivide_tri_sphere(a, b, c, n):
     return verts_nzd, tris
 
 
-def this_tri_abc(verts, tri):
-    return verts[tri[0]], verts[tri[1]], verts[tri[2]]
+# Mesh MUST be symmetric when reflecting across edges, otherwise
+# vertices on edges may not line up.
+def subdivide_mesh_sphere(mesh, n):
+    tolerance = 1e-12
+    # Subdivide each mesh triangle. Store vertices and triangles in a big array.
+    verts_og, tris_og = mesh
+    verts_subdiv_list = []
+    tris_subdiv_list = []
+    verts_per_og_tri = ((n + 1) * (n + 2)) // 2
+    for i, tri in enumerate(tris_og):
+        verts_new, tris_new = subdivide_tri_sphere(*verts_og[tri], n)
+        verts_subdiv_list.append(verts_new)
+        tris_subdiv_list.append(tris_new + i*verts_per_og_tri)
+    verts = np.concatenate(verts_subdiv_list)
+    tris = np.concatenate(tris_subdiv_list)
+    
+    # Make array of indices to check, ixs_to_check.
+    edge_vert_ixs = tri_edge_vert_indices(n)
+    ixs_to_check = np.concatenate(
+        [edge_vert_ixs + i*verts_per_og_tri for i in range(tris_og.shape[0])])
+    # Make array of "original" indices
+    first_seen_ixs = []
+    # Make array that takes old indices to new ones
+        # most of this array is the identity, a[i] == i whenever i isn't on edge
+    old_ixs_to_new = np.arange(verts.shape[0])
+    # Loop over ixs_to_check:
+        # Loop over "original" indices, checking if there's a duplicate
+        # if not duplicate, append to "original" indices
+        # Update array old |-> new
+    for ix in ixs_to_check:
+        for seen_ix in first_seen_ixs:
+            if vec_norm(verts[ix] - verts[seen_ix]) < tolerance:
+                old_ixs_to_new[ix] = seen_ix
+                break
+        else: # nobreak
+            first_seen_ixs.append(ix)
+    ixs_unique = np.unique(old_ixs_to_new)
+    ixs_unique_list = list(ixs_unique)
+    verts_final = verts[ixs_unique]
+    def old_ix_to_final_ix(old_ix):
+        return ixs_unique_list.index(old_ixs_to_new[old_ix])
+    tris_final = np.vectorize(old_ix_to_final_ix)(tris)
+    return verts_final, tris_final
 
 
 def tangent_space_matrix(a, b, c, clamp_to_sphere=False):
@@ -136,7 +190,7 @@ def matrix_basis_vecs_to_tri(a, b, c, clamp_to_sphere=False):
 def gradient_descent(
         cost_func,
         grad_cost_func,
-        initial_state,
+        initial_state, *,
         normalize_func=lambda x: x,
         learning_rate=0.05,
         iteration_count=100):
