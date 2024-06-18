@@ -118,10 +118,8 @@ def subdivide_tri_sphere(a, b, c, n):
 # Mesh MUST be symmetric when reflecting across edges, otherwise
 # vertices on edges may not line up.
 def subdivide_mesh_sphere(mesh, n):
-    t0 = perf_counter()
-    
     tolerance = 1e-12
-    # Subdivide each mesh triangle. Store vertices and triangles in a big array.
+    # Subdivide each mesh triangle. Store new vertices and triangles.
     verts_og, tris_og = mesh
     verts_subdiv_list = []
     tris_subdiv_list = []
@@ -133,26 +131,11 @@ def subdivide_mesh_sphere(mesh, n):
     verts = np.concatenate(verts_subdiv_list)
     tris = np.concatenate(tris_subdiv_list)
 
-    t1 = perf_counter()
-    print("subdivision", t1 - t0)
-    t0 = t1
-    
-    # Make array of indices to check, ixs_to_check.
     edge_vert_ixs = tri_edge_vert_indices(n)
-    ixs_to_check = np.concatenate(
+    ixs_to_check = np.concatenate( # edge indices to check for duplicates
         [edge_vert_ixs + i*verts_per_og_tri for i in range(tris_og.shape[0])])
-    # Make array of "original" indices
     first_seen_ixs = []
-    # Make array that takes old indices to new ones
-        # most of this array is the identity, a[i] == i whenever i isn't on edge
     old_ixs_to_new = np.arange(verts.shape[0])
-    # Loop over ixs_to_check:
-        # Loop over "original" indices, checking if there's a duplicate
-        # if not duplicate, append to "original" indices
-        # Update array old |-> new
-    t1 = perf_counter()
-    print("bonus", t1 - t0)
-    t0 = t1
     for ix in ixs_to_check:
         for seen_ix in first_seen_ixs:
             if vec_norm(verts[ix] - verts[seen_ix]) < tolerance:
@@ -160,25 +143,14 @@ def subdivide_mesh_sphere(mesh, n):
                 break
         else: # nobreak
             first_seen_ixs.append(ix)
-    t1 = perf_counter()
-    print("main loop", t1 - t0)
-    t0 = t1
+
     ixs_unique = np.unique(old_ixs_to_new)
-    #ixs_unique_list = list(ixs_unique)
     verts_final = verts[ixs_unique]
-    t1 = perf_counter()
-    print("unique", t1 - t0)
-    t0 = t1
     new_ixs_to_final = np.arange(verts.shape[0])
     for i, val in enumerate(ixs_unique):
         new_ixs_to_final[val] = i
     old_ixs_to_final = new_ixs_to_final[old_ixs_to_new]
-    #def old_ix_to_final_ix(old_ix):
-    #    return ixs_unique_list.index(old_ixs_to_new[old_ix])
     tris_final = old_ixs_to_final[tris]
-    t1 = perf_counter()
-    print("indexof", t1 - t0)
-    t0 = t1
     return verts_final, tris_final
 
 
