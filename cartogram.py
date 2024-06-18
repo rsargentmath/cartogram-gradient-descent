@@ -29,6 +29,28 @@ ICOSAHEDRON = (np.array([[PHI, 1, 0], [-PHI, 1, 0],
                          [4, 11, 8], [5, 8, 11],
                          [6, 10, 9], [7, 9, 10]])
                )
+a = 1 / np.sqrt(3)
+CUBE = (np.array([[1, 0, 0], [0, 1, 0],
+                  [0, 0, 1], [-1, 0, 0],
+                  [0, -1, 0], [0, 0, -1],
+                  [a, a, a], [-a, a, a],
+                  [a, -a, a], [-a, -a, a],
+                  [a, a, -a], [-a, a, -a],
+                  [a, -a, -a], [-a, -a, -a]]),
+        np.array([[0, 6, 8], [0, 8, 12],
+                  [0, 10, 6], [0, 12, 10],
+                  [1, 6, 10], [1, 7, 6],
+                  [1, 10, 11], [1, 11, 7],
+                  [2, 6, 7], [2, 7, 9],
+                  [2, 8, 6], [2, 9, 8],
+                  [3, 7, 11], [3, 9, 7],
+                  [3, 11, 13], [3, 13, 9],
+                  [4, 8, 9], [4, 9, 13],
+                  [4, 12, 8], [4, 13, 12],
+                  [5, 10, 12], [5, 11, 10],
+                  [5, 12, 13], [5, 13, 11]])
+        )
+del a
 
 
 def matrix_times_array_of_vectors(matrix, vectors):
@@ -194,3 +216,18 @@ def gradient_descent(
         state -= learning_rate * grad_cost_func(state, i)
         state = normalize_func(state)
     return state
+
+
+def plot_mesh(mesh):
+    plt.figure()
+    verts, tris = mesh
+    for tri in tris:
+        a, b, c = verts[tri]
+        if a.shape[0] == 3:
+            if np.cross(b-a, c-a)[2] <= 0:
+                continue
+        a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
+        xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
+        plt.plot(xs, ys)
+    plt.gca().set_aspect("equal")
+    plt.show()
