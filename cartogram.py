@@ -205,21 +205,93 @@ def matrix_basis_vecs_to_tri(a, b, c, clamp_to_sphere=False):
 
 
 def gradient_descent(
-        cost_func,
-        grad_cost_func,
-        initial_state, *,
+        cost_func, # tuple: cost, grad_cost
+        initial_state,
+        *,
         normalize_func=lambda x: x,
         learning_rate=0.05,
-        iteration_count=100):
+        iteration_count=100,
+        plot_func=lambda *args, **kwargs: None,
+        ):
     state = initial_state.copy()
     for i in range(iteration_count):
-        state -= learning_rate * grad_cost_func(state, i)
+        state -= learning_rate * cost_func(state, i)[1]
         state = normalize_func(state)
     return state
 
 
+def octahedron_equal_area(it_count):
+    verts_og, tris = subdivide_tri_sphere(*OCTAHEDRON[0][OCTAHEDRON[1][0]], 16)
+    num_verts = verts_og.shape[0]
+    num_tris = tris.shape[0]
+    G0_array = np.empty((num_tris, 2, 2))
+    for i, tri in enumerate(tris):
+        a, b, c = verts_og[tri]
+        G0 = matrix_basis_vecs_to_tri(a, b, c)
+        G0_array[i] = G0
+    #print(G0_array)
+
+    def cost_func(verts_state, iteration_ix):
+        weight_area = 2
+        weight_dist = 0.2
+        cost = 0
+        grad_cost = np.zeros_like(verts_state)
+        max_ratio_seen = 0
+        for i, tri in enumerate(tris):
+            a, b, c = verts_state[tri]
+            A = 1   # desired area scale
+            G0 = G0_array[i]
+            G0inv = np.linalg.inv(G0)
+            M0 = 1/2 * np.linalg.det(G0)
+            #print(M0)
+            tan_space_mat = tangent_space_matrix(a, b, c, False)
+            G = matrix_basis_vecs_to_tri(a, b, c, False)
+            # gradient where we're moving a, b, c using the tan space coords
+            G_grad = np.array([[[[-1, -1], [0, 0]], [[0, 0], [-1, -1]]],
+                               [[[1, 0], [0, 0]], [[0, 0], [1, 0]]],
+                               [[[0, 1], [0, 0]], [[0, 0], [0, 1]]]])
+            E = G @ G0inv
+            #print(E)
+            E_grad = G_grad @ G0inv
+            #print(E_grad)
+            D = np.linalg.det(E)
+            #print(D)
+            F = np.sum(E * E)
+            D_grad = (E_grad[..., 0, 0] * E[1, 1]
+                      + E[0, 0] * E_grad[..., 1, 1]
+                      - E_grad[..., 0, 1] * E[1, 0]
+                      - E[0, 1] * E_grad[..., 1, 0])
+            F_grad = 2 * (E[0, 0] * E_grad[..., 0, 0]
+                          + E[0, 1] * E_grad[..., 0, 1]
+                          + E[1, 0] * E_grad[..., 1, 0]
+                          + E[1, 1] * E_grad[..., 1, 1])
+            #print(D_grad, F_grad)
+            this_tri_cost = M0 * (weight_dist * (F/D - 2)
+                                  + weight_area * (D/A + A/D - 2))
+            this_tri_cost_grad = M0 * (weight_dist * (F_grad*D - F*D_grad)/(D*D)
+                                + weight_area * (D_grad/A - A*D_grad/(D*D)))
+            #print((F_grad*D - F*D_grad)/(D*D))
+            this_tri_cost_grad_global_coords = matrix_times_array_of_vectors(
+                                                   tan_space_mat[:, 0:2],
+                                                   this_tri_cost_grad)
+            cost += this_tri_cost
+            for j in range(3):
+                grad_cost[tri[j]] += this_tri_cost_grad_global_coords[j]
+            max_ratio_seen = max(max_ratio_seen, D/A, A/D)
+        print(max_ratio_seen)
+        return cost, grad_cost
+
+    rot_mat = tangent_space_matrix(*OCTAHEDRON[0][OCTAHEDRON[1][0]]).T
+    initial_state = matrix_times_array_of_vectors(rot_mat, verts_og)[..., 0:2]
+    verts_new = gradient_descent(cost_func,
+                                 initial_state,
+                                 iteration_count=it_count,
+                                 learning_rate = 5e-2)
+    plot_mesh((verts_new, tris))
+
+
 def plot_mesh(mesh):
-    plt.figure()
+    plt.cla()
     verts, tris = mesh
     for tri in tris:
         a, b, c = verts[tri]
@@ -230,4 +302,14 @@ def plot_mesh(mesh):
         xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
         plt.plot(xs, ys)
     plt.gca().set_aspect("equal")
+    plt.gca().set_xlim(-1.2, 1.2)
+    plt.gca().set_ylim(-1.2, 1.2)
     plt.show()
+
+
+def main():
+    plt.ion()
+
+
+if __name__ == "__main__":
+    main()
