@@ -229,7 +229,6 @@ def octahedron_equal_area(it_count):
         a, b, c = verts_og[tri]
         G0 = matrix_basis_vecs_to_tri(a, b, c)
         G0_array[i] = G0
-    #print(G0_array)
 
     def cost_func(verts_state, iteration_ix):
         weight_area = 2
@@ -243,7 +242,6 @@ def octahedron_equal_area(it_count):
             G0 = G0_array[i]
             G0inv = np.linalg.inv(G0)
             M0 = 1/2 * np.linalg.det(G0)
-            #print(M0)
             tan_space_mat = tangent_space_matrix(a, b, c, False)
             G = matrix_basis_vecs_to_tri(a, b, c, False)
             # gradient where we're moving a, b, c using the tan space coords
@@ -251,11 +249,8 @@ def octahedron_equal_area(it_count):
                                [[[1, 0], [0, 0]], [[0, 0], [1, 0]]],
                                [[[0, 1], [0, 0]], [[0, 0], [0, 1]]]])
             E = G @ G0inv
-            #print(E)
             E_grad = G_grad @ G0inv
-            #print(E_grad)
             D = np.linalg.det(E)
-            #print(D)
             F = np.sum(E * E)
             D_grad = (E_grad[..., 0, 0] * E[1, 1]
                       + E[0, 0] * E_grad[..., 1, 1]
@@ -265,12 +260,10 @@ def octahedron_equal_area(it_count):
                           + E[0, 1] * E_grad[..., 0, 1]
                           + E[1, 0] * E_grad[..., 1, 0]
                           + E[1, 1] * E_grad[..., 1, 1])
-            #print(D_grad, F_grad)
             this_tri_cost = M0 * (weight_dist * (F/D - 2)
                                   + weight_area * (D/A + A/D - 2))
             this_tri_cost_grad = M0 * (weight_dist * (F_grad*D - F*D_grad)/(D*D)
                                 + weight_area * (D_grad/A - A*D_grad/(D*D)))
-            #print((F_grad*D - F*D_grad)/(D*D))
             this_tri_cost_grad_global_coords = matrix_times_array_of_vectors(
                                                    tan_space_mat[:, 0:2],
                                                    this_tri_cost_grad)
