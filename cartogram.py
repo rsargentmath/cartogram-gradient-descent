@@ -94,7 +94,15 @@ def nzd(v):
     return v / vec_norm(v)
 
 
+def lonlat_to_cartesian(lon, lat):
+    return np.array([np.cos(lon) * np.cos(lat),
+                    np.sin(lon) * np.cos(lat),
+                    np.sin(lat)])
+
+
 def tri_area_plane(a, b, c):
+    if a.shape[0] == 2:
+        return 1/2 * np.cross(b-a, c-a)
     return 1/2 * vec_norm(np.cross(b-a, c-a))
 
 
@@ -220,8 +228,62 @@ def gradient_descent(
     return state
 
 
+def clamp_inside_half_space(v, clamp_vec, min_dot):
+    # clamp_vec has length 1
+    if v @ clamp_vec >= min_dot:
+        return v
+    return v + clamp_vec * (min_dot - v @ clamp_vec)
+
+
+def clamp_inside_tri_BAD(v, clamp_vecs, min_dots):
+    # only works if v is outside at most one of the half spaces
+    v_out = v.copy()
+    for i in range(3):
+        v_out = clamp_inside_half_space(v_out, clamp_vecs[i], min_dots[i])
+    return v_out
+
+
+def is_point_inside_tri(v, a, b, c):
+    # If dimension is 3, checks if v is inside the infinite pyramid with
+    # the vertex at the origin and edges through a, b, and c.
+    tolerance = 1e-12
+    if v.shape[0] == 2:
+        return (np.cross(b-a, v-a) >= -tolerance
+                and np.cross(c-b, v-b) >= -tolerance
+                and np.cross(a-c, v-c) >= -tolerance)
+    return (np.cross(a, b) @ v >= -tolerance
+            and np.cross(b, c) @ v >= -tolerance
+            and np.cross(c, a) @ v >= -tolerance)
+
+
+def point_to_tri_plane(v, a, b, c):
+    if v.shape[0] == 2:
+        return v
+    normal = nzd(np.cross(b-a, c-a))
+    return v * (a @ normal) / (v @ normal)
+
+
+def point_old_tri_to_new(v, a0, b0, c0, a1, b1, c1):
+    assert v.shape[0] == a0.shape[0]
+    if v.shape[0] == 2:
+        mat0 = np.column_stack([b0-a0, c0-a0])
+    elif v.shape[0] == 3:
+        normal = nzd(np.cross(b0-a0, c0-a0))
+        mat0 = np.column_stack([b0-a0, c0-a0, normal])
+    mat1 = np.column_stack([b1-a1, c1-a1])
+    mat = mat1 @ np.linalg.inv(mat0)[0:2]
+    return a1 + mat @ (v - a0)
+
+
+def point_old_mesh_to_new(v, verts_old, verts_new, tris):
+    for tri in tris:
+        if is_point_inside_tri(v, *verts_old[tri]):
+            v_plane = point_to_tri_plane(v, *verts_old[tri])
+            return point_old_tri_to_new(v, *verts_old[tri], *verts_new[tri])
+
+
 def octahedron_equal_area(it_count):
-    verts_og, tris = subdivide_tri_sphere(*OCTAHEDRON[0][OCTAHEDRON[1][0]], 16)
+    verts_og, tris = subdivide_tri_sphere(*OCTAHEDRON[0][OCTAHEDRON[1][0]], 48)
     num_verts = verts_og.shape[0]
     num_tris = tris.shape[0]
     G0_array = np.empty((num_tris, 2, 2))
@@ -231,8 +293,8 @@ def octahedron_equal_area(it_count):
         G0_array[i] = G0
 
     def cost_func(verts_state, iteration_ix):
-        weight_area = 2
-        weight_dist = 0.2
+        weight_area = 1
+        weight_dist = 0.01
         cost = 0
         grad_cost = np.zeros_like(verts_state)
         max_ratio_seen = 0
@@ -271,20 +333,83 @@ def octahedron_equal_area(it_count):
             for j in range(3):
                 grad_cost[tri[j]] += this_tri_cost_grad_global_coords[j]
             max_ratio_seen = max(max_ratio_seen, D/A, A/D)
-        print(max_ratio_seen)
+        print(max_ratio_seen, cost)
         return cost, grad_cost
+
+    def normalize_func(verts_state):
+        b_over_a = 3**1.5 / 2 * 0.25681278
+        a = np.sqrt( np.pi / (2 * (3**1.5 + (1 - 3**0.5) * b_over_a**2)) )
+
+        def this_clamp_inside_tri(v):
+            return clamp_inside_tri_BAD(v,
+                                        np.array([[0, 1],
+                                                  [-3**0.5/2, -1/2],
+                                                  [3**0.5/2, -1/2]]),
+                                        np.array([-a, -a, -a]))
+
+        return np.apply_along_axis(this_clamp_inside_tri, 1, verts_state)
 
     rot_mat = tangent_space_matrix(*OCTAHEDRON[0][OCTAHEDRON[1][0]]).T
     initial_state = matrix_times_array_of_vectors(rot_mat, verts_og)[..., 0:2]
     verts_new = gradient_descent(cost_func,
                                  initial_state,
                                  iteration_count=it_count,
-                                 learning_rate = 5e-2)
-    plot_mesh((verts_new, tris))
+                                 normalize_func=normalize_func)
+    scale_factors = np.array([
+        tri_area_plane(*verts_new[tri])/tri_area_plane(*verts_og[tri])
+        for tri in tris])
+    print(np.min(scale_factors), np.max(scale_factors))
+    set_up_plot(0.85, 0.1)
+
+    lines = octant_graticule(90)
+    for line in lines:
+        def to_new_mesh(v):
+            return point_old_mesh_to_new(v, verts_og, verts_new, tris)
+        line_new = np.apply_along_axis(to_new_mesh, 1, line)
+        plot_curve(line_new)
+    return verts_new, tris
+
+
+def octant_graticule(n, resolution=0.005):
+    lines = []
+    for i in range(n + 1):
+        lon = np.pi/2 * i/n
+        start = np.array([lon, 0])
+        end = np.array([lon, np.pi/2])
+        num_points = int(np.ceil(np.pi/(2*resolution))) + 1
+        line_lonlat = np.linspace(start, end, num_points)
+        line = np.apply_along_axis(lambda lonlat: lonlat_to_cartesian(*lonlat),
+                                   1,
+                                   line_lonlat)
+        lines.append(line)
+    for i in range(n):
+        lat = np.pi/2 * i/n
+        start = np.array([0, lat])
+        end = np.array([np.pi/2, lat])
+        num_points = int(np.ceil(np.pi/(2*resolution) * np.cos(lat))) + 1
+        line_lonlat = np.linspace(start, end, num_points)
+        line = np.apply_along_axis(lambda lonlat: lonlat_to_cartesian(*lonlat),
+                                   1,
+                                   line_lonlat)
+        lines.append(line)
+    return lines
+
+
+def plot_curve(curve):
+    curve_2d = curve[:, 0:2]
+    xs, ys = curve_2d.T
+    plt.plot(xs, ys, c="0", linewidth=0.8)
+
+
+def set_up_plot(lims=1.1, y_offset=0):
+    plt.cla()
+    plt.gca().set_aspect("equal")
+    plt.gca().set_xlim(-lims, lims)
+    plt.gca().set_ylim(-lims + y_offset, lims + y_offset)
+    plt.show()
 
 
 def plot_mesh(mesh):
-    plt.cla()
     verts, tris = mesh
     for tri in tris:
         a, b, c = verts[tri]
@@ -294,10 +419,6 @@ def plot_mesh(mesh):
         a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
         xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
         plt.plot(xs, ys)
-    plt.gca().set_aspect("equal")
-    plt.gca().set_xlim(-1.2, 1.2)
-    plt.gca().set_ylim(-1.2, 1.2)
-    plt.show()
 
 
 def main():
