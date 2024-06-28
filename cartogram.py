@@ -94,6 +94,68 @@ def nzd(v):
     return v / vec_norm(v)
 
 
+def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
+    tolerance = 1e-12
+    assert a0.shape[0] == 2
+    if abs(np.cross(a1-a0, b1-b0)) < tolerance:     # if close to parallel
+        return None
+    norm_a = np.array([[0, -1], [1, 0]]) @ nzd(a1 - a0)
+    norm_b = np.array([[0, -1], [1, 0]]) @ nzd(b1 - b0)
+    dot_a = norm_a @ a0
+    dot_b = norm_b @ b0
+    dot_n = norm_a @ norm_b
+    coeff_a = (dot_a - dot_n*dot_b) / (1 - dot_n*dot_n)
+    coeff_b = (dot_b - dot_n*dot_a) / (1 - dot_n*dot_n)
+    point = coeff_a * norm_a + coeff_b * norm_b
+    min_cross_a, max_cross_a = sorted([np.cross(norm_a, a0),
+                                       np.cross(norm_a, a1)])
+    min_cross_b, max_cross_b = sorted([np.cross(norm_b, b0),
+                                       np.cross(norm_b, b1)])
+    cross_a = np.cross(norm_a, point)
+    cross_b = np.cross(norm_b, point)
+    if not infinite_a:
+        if (cross_a > max_cross_a + tolerance
+                or cross_a < min_cross_a - tolerance):
+            return None
+    if not infinite_b:
+        if (cross_b > max_cross_b + tolerance
+                or cross_b < min_cross_b - tolerance):
+            return None
+    return point
+
+
+def gnomonic_projection(v):
+    tolerance = 1e-12
+    assert v.shape = (3,)
+    assert v[2] > tolerance
+    return v[0:2] / v[2]
+
+
+def portion_of_tri_inside_polygon_sphere(a, b, c, polygon):
+    distance_threshold = 0.22   # roughly the radius of the biggest circle
+                                # that can be inscribed in Russia
+    def dist_to_a(vertex):
+        return vec_norm(vertex - a)
+    distances = np.apply_along_axis(dist_to_a, 1, polygon)
+    if np.min(distances) > distance_threshold:
+        return 0
+    mat = tangent_space_matrix(a, b, c, clamp_to_sphere=True)
+    def rotate_and_project(v):
+        return gnomonic_projection(mat.T @ v)
+    a_proj = rotate_and_project(a)
+    b_proj = rotate_and_project(b)
+    c_proj = rotate_and_project(c)
+    polygon_proj = np.apply_along_axis(rotate_and_project, 1, polygon)
+    return portion_of_tri_inside_polygon_plane(a_proj,
+                                               b_proj,
+                                               c_proj,
+                                               polygon_proj)
+
+
+def portion_of_tri_inside_polygon_plane(a, b, c, polygon):
+    raise NotImplementedError
+
+
 def lonlat_to_cartesian(lon, lat):
     return np.array([np.cos(lon) * np.cos(lat),
                     np.sin(lon) * np.cos(lat),
