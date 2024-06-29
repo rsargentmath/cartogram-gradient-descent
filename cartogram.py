@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from time import perf_counter
 
 
+TOLERANCE = 1e-12
+
 PHI = (1 + np.sqrt(5)) / 2
 OCTAHEDRON = (np.array([[1, 0, 0], [0, 1, 0],
                         [0, 0, 1], [-1, 0, 0],
@@ -95,9 +97,8 @@ def nzd(v):
 
 
 def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
-    tolerance = 1e-12
     assert a0.shape[0] == 2
-    if abs(np.cross(a1-a0, b1-b0)) < tolerance:     # if close to parallel
+    if abs(np.cross(a1-a0, b1-b0)) < TOLERANCE:     # if close to parallel
         return None
     norm_a = np.array([[0, -1], [1, 0]]) @ nzd(a1 - a0)
     norm_b = np.array([[0, -1], [1, 0]]) @ nzd(b1 - b0)
@@ -114,20 +115,17 @@ def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
     cross_a = np.cross(norm_a, point)
     cross_b = np.cross(norm_b, point)
     if not infinite_a:
-        if (cross_a > max_cross_a + tolerance
-                or cross_a < min_cross_a - tolerance):
+        if cross_a > max_cross_a or cross_a < min_cross_a:
             return None
     if not infinite_b:
-        if (cross_b > max_cross_b + tolerance
-                or cross_b < min_cross_b - tolerance):
+        if cross_b > max_cross_b or cross_b < min_cross_b:
             return None
     return point
 
 
 def gnomonic_projection(v):
-    tolerance = 1e-12
     assert v.shape = (3,)
-    assert v[2] > tolerance
+    assert v[2] > TOLERANCE
     return v[0:2] / v[2]
 
 
@@ -153,7 +151,66 @@ def portion_of_tri_inside_polygon_sphere(a, b, c, polygon):
 
 
 def portion_of_tri_inside_polygon_plane(a, b, c, polygon):
-    raise NotImplementedError
+    to_std_tri_mat = np.linalg.inv(np.column_stack([b-a, c-a]))
+    def transform(v):
+        return to_std_tri_mat @ (v - a)
+    poly_trans = np.apply_along_axis(transform, 1, polygon)
+    area_portion = 0
+    for i in range(poly_trans.shape[0]):
+        pt0 = poly_trans[i]
+        pt1 = poly_trans[(i+1) % poly_trans.shape[0]]
+        if pt1[0] <= pt0[0]:
+            orientation = 1
+            pt_left = pt1
+            pt_right = pt0
+        else:
+            orientation = -1
+            pt_left = pt0
+            pt_right = pt1
+        if pt_left[0] <= 0 and pt_right[0] <= 0:
+            continue
+        if pt_left[0] >= 1 and pt_right[0] >= 1:
+            continue
+        left_intersection = line_intersection_plane(pt_left,
+                                                    pt_right,
+                                                    np.array([0, 0]),
+                                                    np.array([0, 1]),
+                                                    infinite_b=True)
+        right_intersection = line_intersection_plane(pt_left,
+                                                     pt_right,
+                                                     np.array([1, 0]),
+                                                     np.array([1, 1]),
+                                                     infinite_b=True)
+        if left_intersection is not None:
+            pt_left = left_intersection
+        if right_intersection is not None:
+            pt_right = right_intersection
+
+        bottom_intersection = line_intersection_plane(pt_left,
+                                                      pt_right,
+                                                      np.array([0, 0]),
+                                                      np.array([1, 0]),
+                                                      infinite_b=False)
+        top_intersection = line_intersection_plane(pt_left,
+                                                   pt_right,
+                                                   np.array([1, 0]),
+                                                   np.array([0, 1]),
+                                                   infinite_b=False)
+        pts = [pt_left, pt_right]
+        if bottom_intersection is not None:
+            pts.append(bottom_intersection)
+        if top_intersection is not None:
+            pts.append(top_intersection)
+        pts_sorted = np.array(sorted(pts, key=lambda pt: pt[0]))
+        def clamp_to_tri(pt):
+            pt_y_clamped = np.clip(pt[1], 0, 1 - pt[0])
+            return np.array([pt[0], pt_y_clamped])
+        pts_clamped = np.apply_along_axis(clamp_to_tri, 1, pts_sorted)
+        for j in range(pts_clamped.shape[0] - 1):
+            pt_l, pt_r = pts_clamped[j], pts_clamped[j + 1]
+            trapezoid_area = (pt_r[0] - pt_l[0]) * (pt_l[1] + pt_r[1]) / 2
+            area_portion += 2 * orientation * trapezoid_area
+    return area_portion
 
 
 def lonlat_to_cartesian(lon, lat):
@@ -210,7 +267,6 @@ def subdivide_tri_sphere(a, b, c, n):
 # Mesh MUST be symmetric when reflecting across edges, otherwise
 # vertices on edges may not line up.
 def subdivide_mesh_sphere(mesh, n):
-    tolerance = 1e-12
     # Subdivide each mesh triangle. Store new vertices and triangles.
     verts_og, tris_og = mesh
     verts_subdiv_list = []
@@ -230,7 +286,7 @@ def subdivide_mesh_sphere(mesh, n):
     old_ixs_to_new = np.arange(verts.shape[0])
     for ix in ixs_to_check:
         for seen_ix in first_seen_ixs:
-            if vec_norm(verts[ix] - verts[seen_ix]) < tolerance:
+            if vec_norm(verts[ix] - verts[seen_ix]) < TOLERANCE:
                 old_ixs_to_new[ix] = seen_ix
                 break
         else: # nobreak
@@ -252,8 +308,7 @@ def tangent_space_matrix(a, b, c, clamp_to_sphere=False):
     if dim == 2:
         return np.identity(2)
     
-    tolerance = 1e-12
-    assert vec_norm(np.cross(b-a, c-a)) >= tolerance
+    assert vec_norm(np.cross(b-a, c-a)) >= TOLERANCE
     t = nzd(b - a)
     n = nzd(np.cross(b-a, c-a))
     if clamp_to_sphere and n @ a < 0:
@@ -308,14 +363,13 @@ def clamp_inside_tri_BAD(v, clamp_vecs, min_dots):
 def is_point_inside_tri(v, a, b, c):
     # If dimension is 3, checks if v is inside the infinite pyramid with
     # the vertex at the origin and edges through a, b, and c.
-    tolerance = 1e-12
     if v.shape[0] == 2:
-        return (np.cross(b-a, v-a) >= -tolerance
-                and np.cross(c-b, v-b) >= -tolerance
-                and np.cross(a-c, v-c) >= -tolerance)
-    return (np.cross(a, b) @ v >= -tolerance
-            and np.cross(b, c) @ v >= -tolerance
-            and np.cross(c, a) @ v >= -tolerance)
+        return (np.cross(b-a, v-a) >= -TOLERANCE
+                and np.cross(c-b, v-b) >= -TOLERANCE
+                and np.cross(a-c, v-c) >= -TOLERANCE)
+    return (np.cross(a, b) @ v >= -TOLERANCE
+            and np.cross(b, c) @ v >= -TOLERANCE
+            and np.cross(c, a) @ v >= -TOLERANCE)
 
 
 def point_to_tri_plane(v, a, b, c):
