@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import json
 from time import perf_counter
 
 
@@ -124,7 +125,7 @@ def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
 
 
 def gnomonic_projection(v):
-    assert v.shape = (3,)
+    assert v.shape == (3,)
     assert v[2] > TOLERANCE
     return v[0:2] / v[2]
 
@@ -539,6 +540,8 @@ def plot_mesh(mesh):
 
 def main():
     plt.ion()
+    with open("ne_50m_admin_0_countries_lakes_FIXED.json", "r") as f:
+        BORDER_DATA = json.load(f)
 
 
 if __name__ == "__main__":
