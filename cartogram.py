@@ -4,8 +4,25 @@ import json
 from time import perf_counter
 
 
-TOLERANCE = 1e-12
+with open("ne_50m_admin_0_countries_lakes_FIXED.json", "r") as f:
+    import_data = json.load(f)
+WORLD_BORDERS_DATA = {}
+WORLD_BORDERS_DATA_FLAT = {}
+for k, v in import_data.items():
+    nonflat_polygon_list = []
+    flat_polygon_list = []
+    for polygon_list in v:
+        this_polygon_list = []
+        for polygon in polygon_list:
+            this_polygon_list.append(np.deg2rad(np.array(polygon)))
+            flat_polygon_list.append(np.deg2rad(np.array(polygon)))
+        nonflat_polygon_list.append(this_polygon_list)
+    WORLD_BORDERS_DATA[k] = nonflat_polygon_list
+    WORLD_BORDERS_DATA_FLAT[k] = flat_polygon_list
+del import_data
 
+
+TOLERANCE = 1e-12
 PHI = (1 + np.sqrt(5)) / 2
 OCTAHEDRON = (np.array([[1, 0, 0], [0, 1, 0],
                         [0, 0, 1], [-1, 0, 0],
@@ -214,7 +231,8 @@ def portion_of_tri_inside_polygon_plane(a, b, c, polygon):
     return area_portion
 
 
-def lonlat_to_cartesian(lon, lat):
+def lonlat_to_cartesian(lonlat):
+    lon, lat = lonlat
     return np.array([np.cos(lon) * np.cos(lat),
                     np.sin(lon) * np.cos(lat),
                     np.sin(lat)])
@@ -495,9 +513,7 @@ def octant_graticule(n, resolution=0.005):
         end = np.array([lon, np.pi/2])
         num_points = int(np.ceil(np.pi/(2*resolution))) + 1
         line_lonlat = np.linspace(start, end, num_points)
-        line = np.apply_along_axis(lambda lonlat: lonlat_to_cartesian(*lonlat),
-                                   1,
-                                   line_lonlat)
+        line = np.apply_along_axis(lonlat_to_cartesian, 1, line_lonlat)
         lines.append(line)
     for i in range(n):
         lat = np.pi/2 * i/n
@@ -505,9 +521,7 @@ def octant_graticule(n, resolution=0.005):
         end = np.array([np.pi/2, lat])
         num_points = int(np.ceil(np.pi/(2*resolution) * np.cos(lat))) + 1
         line_lonlat = np.linspace(start, end, num_points)
-        line = np.apply_along_axis(lambda lonlat: lonlat_to_cartesian(*lonlat),
-                                   1,
-                                   line_lonlat)
+        line = np.apply_along_axis(lonlat_to_cartesian, 1, line_lonlat)
         lines.append(line)
     return lines
 
@@ -540,8 +554,6 @@ def plot_mesh(mesh):
 
 def main():
     plt.ion()
-    with open("ne_50m_admin_0_countries_lakes_FIXED.json", "r") as f:
-        BORDER_DATA = json.load(f)
 
 
 if __name__ == "__main__":
