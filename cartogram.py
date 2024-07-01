@@ -4,7 +4,7 @@ import json
 from time import perf_counter
 
 
-with open("ne_50m_admin_0_countries_lakes_FIXED.json", "r") as f:
+with open("ne_110m_admin_0_countries_lakes_FIXED.json", "r") as f:
     import_data = json.load(f)
 WORLD_BORDERS_DATA = {}
 WORLD_BORDERS_DATA_FLAT = {}
