@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import NamedTuple
 import json
 from time import perf_counter
 
@@ -24,52 +25,60 @@ del import_data
 
 TOLERANCE = 1e-12
 PHI = (1 + np.sqrt(5)) / 2
-OCTAHEDRON = (np.array([[1, 0, 0], [0, 1, 0],
-                        [0, 0, 1], [-1, 0, 0],
-                        [0, -1, 0], [0, 0, -1]]),
-              np.array([[0, 1, 2], [0, 2, 4],
-                        [0, 4, 5], [0, 5, 1],
-                        [1, 3, 2], [1, 5, 3],
-                        [2, 3, 4], [3, 5, 4]])
-              )
-ICOSAHEDRON = (np.array([[PHI, 1, 0], [-PHI, 1, 0],
-                         [-PHI, -1, 0], [PHI, -1, 0],
-                         [0, PHI, 1], [0, -PHI, 1],
-                         [0, -PHI, -1], [0, PHI, -1],
-                         [1, 0, PHI], [1, 0, -PHI],
-                         [-1, 0, -PHI], [-1, 0, PHI]]) / np.sqrt(PHI + 2),
-               np.array([[0, 3, 9], [0, 4, 8],
-                         [0, 7, 4], [0, 8, 3],
-                         [0, 9, 7], [1, 2, 11],
-                         [1, 4, 7], [1, 7, 10],
-                         [1, 10, 2], [1, 11, 4],
-                         [2, 5, 11], [2, 6, 5],
-                         [2, 10, 6], [3, 5, 6],
-                         [3, 6, 9], [3, 8, 5],
-                         [4, 11, 8], [5, 8, 11],
-                         [6, 10, 9], [7, 9, 10]])
-               )
+
+
+class Mesh(NamedTuple):
+    verts: np.ndarray
+    tris: np.ndarray
+
+
+OCTAHEDRON = Mesh(verts=np.array([[1, 0, 0], [0, 1, 0],
+                                  [0, 0, 1], [-1, 0, 0],
+                                  [0, -1, 0], [0, 0, -1]]),
+                  tris=np.array([[0, 1, 2], [0, 2, 4],
+                                 [0, 4, 5], [0, 5, 1],
+                                 [1, 3, 2], [1, 5, 3],
+                                 [2, 3, 4], [3, 5, 4]])
+                  )
+ICOSAHEDRON = Mesh(verts=(np.array([[PHI, 1, 0], [-PHI, 1, 0],
+                                   [-PHI, -1, 0], [PHI, -1, 0],
+                                   [0, PHI, 1], [0, -PHI, 1],
+                                   [0, -PHI, -1], [0, PHI, -1],
+                                   [1, 0, PHI], [1, 0, -PHI],
+                                   [-1, 0, -PHI], [-1, 0, PHI]])
+                          / np.sqrt(PHI + 2)),
+                   tris=np.array([[0, 3, 9], [0, 4, 8],
+                                  [0, 7, 4], [0, 8, 3],
+                                  [0, 9, 7], [1, 2, 11],
+                                  [1, 4, 7], [1, 7, 10],
+                                  [1, 10, 2], [1, 11, 4],
+                                  [2, 5, 11], [2, 6, 5],
+                                  [2, 10, 6], [3, 5, 6],
+                                  [3, 6, 9], [3, 8, 5],
+                                  [4, 11, 8], [5, 8, 11],
+                                  [6, 10, 9], [7, 9, 10]])
+                   )
 a = 1 / np.sqrt(3)
-CUBE = (np.array([[1, 0, 0], [0, 1, 0],
-                  [0, 0, 1], [-1, 0, 0],
-                  [0, -1, 0], [0, 0, -1],
-                  [a, a, a], [-a, a, a],
-                  [a, -a, a], [-a, -a, a],
-                  [a, a, -a], [-a, a, -a],
-                  [a, -a, -a], [-a, -a, -a]]),
-        np.array([[0, 6, 8], [0, 8, 12],
-                  [0, 10, 6], [0, 12, 10],
-                  [1, 6, 10], [1, 7, 6],
-                  [1, 10, 11], [1, 11, 7],
-                  [2, 6, 7], [2, 7, 9],
-                  [2, 8, 6], [2, 9, 8],
-                  [3, 7, 11], [3, 9, 7],
-                  [3, 11, 13], [3, 13, 9],
-                  [4, 8, 9], [4, 9, 13],
-                  [4, 12, 8], [4, 13, 12],
-                  [5, 10, 12], [5, 11, 10],
-                  [5, 12, 13], [5, 13, 11]])
-        )
+CUBE = Mesh(verts=np.array([[1, 0, 0], [0, 1, 0],
+                            [0, 0, 1], [-1, 0, 0],
+                            [0, -1, 0], [0, 0, -1],
+                            [a, a, a], [-a, a, a],
+                            [a, -a, a], [-a, -a, a],
+                            [a, a, -a], [-a, a, -a],
+                            [a, -a, -a], [-a, -a, -a]]),
+            tris=np.array([[0, 6, 8], [0, 8, 12],
+                           [0, 10, 6], [0, 12, 10],
+                           [1, 6, 10], [1, 7, 6],
+                           [1, 10, 11], [1, 11, 7],
+                           [2, 6, 7], [2, 7, 9],
+                           [2, 8, 6], [2, 9, 8],
+                           [3, 7, 11], [3, 9, 7],
+                           [3, 11, 13], [3, 13, 9],
+                           [4, 8, 9], [4, 9, 13],
+                           [4, 12, 8], [4, 13, 12],
+                           [5, 10, 12], [5, 11, 10],
+                           [5, 12, 13], [5, 13, 11]])
+            )
 del a
 
 
@@ -91,7 +100,7 @@ def subdivide_tri(a, b, c, n):
             tris.append([ix + j, ix + i + j + 2, ix + j + 1])
             tris.append([ix + j + 1, ix + i + j + 2, ix + i + j + 3])
         ix += i + 1
-    return np.array(verts), np.array(tris)
+    return Mesh(verts=np.array(verts), tris=np.array(tris))
 
 
 def tri_edge_vert_indices(n):
@@ -280,14 +289,14 @@ def subdivide_tri_sphere(a, b, c, n):
     bary_coords_new = np.apply_along_axis(f_vec, 1, bary_coords)
     verts = bary_coords_to_abc_plane(a, b, c, bary_coords_new)
     verts_nzd = np.apply_along_axis(nzd, 1, verts)
-    return verts_nzd, tris
+    return Mesh(verts=verts_nzd, tris=tris)
 
 
 # Mesh MUST be symmetric when reflecting across edges, otherwise
 # vertices on edges may not line up.
 def subdivide_mesh_sphere(mesh, n):
     # Subdivide each mesh triangle. Store new vertices and triangles.
-    verts_og, tris_og = mesh
+    verts_og, tris_og = mesh.verts, mesh.tris
     verts_subdiv_list = []
     tris_subdiv_list = []
     verts_per_og_tri = ((n + 1) * (n + 2)) // 2
@@ -318,7 +327,7 @@ def subdivide_mesh_sphere(mesh, n):
         new_ixs_to_final[val] = i
     old_ixs_to_final = new_ixs_to_final[old_ixs_to_new]
     tris_final = old_ixs_to_final[tris]
-    return verts_final, tris_final
+    return Mesh(verts=verts_final, tris=tris_final)
 
 
 def tangent_space_matrix(a, b, c, clamp_to_sphere=False):
@@ -418,7 +427,8 @@ def point_old_mesh_to_new(v, verts_old, verts_new, tris):
 
 
 def octahedron_equal_area(it_count):
-    verts_og, tris = subdivide_tri_sphere(*OCTAHEDRON[0][OCTAHEDRON[1][0]], 48)
+    mesh = subdivide_tri_sphere(*OCTAHEDRON.verts[OCTAHEDRON.tris[0]], 48)
+    verts_og, tris = mesh.verts, mesh.tris
     num_verts = verts_og.shape[0]
     num_tris = tris.shape[0]
     G0_array = np.empty((num_tris, 2, 2))
@@ -484,7 +494,7 @@ def octahedron_equal_area(it_count):
 
         return np.apply_along_axis(this_clamp_inside_tri, 1, verts_state)
 
-    rot_mat = tangent_space_matrix(*OCTAHEDRON[0][OCTAHEDRON[1][0]]).T
+    rot_mat = tangent_space_matrix(*OCTAHEDRON.verts[OCTAHEDRON.tris[0]]).T
     initial_state = matrix_times_array_of_vectors(rot_mat, verts_og)[..., 0:2]
     verts_new = gradient_descent(cost_func,
                                  initial_state,
@@ -502,7 +512,7 @@ def octahedron_equal_area(it_count):
             return point_old_mesh_to_new(v, verts_og, verts_new, tris)
         line_new = np.apply_along_axis(to_new_mesh, 1, line)
         plot_curve(line_new)
-    return verts_new, tris
+    return Mesh(verts=verts_new, tris=tris)
 
 
 def octant_graticule(n, resolution=0.005):
@@ -541,9 +551,8 @@ def set_up_plot(lims=1.1, y_offset=0):
 
 
 def plot_mesh(mesh):
-    verts, tris = mesh
-    for tri in tris:
-        a, b, c = verts[tri]
+    for tri in mesh.tris:
+        a, b, c = mesh.verts[tri]
         if a.shape[0] == 3:
             if np.cross(b-a, c-a)[2] <= 0:
                 continue
