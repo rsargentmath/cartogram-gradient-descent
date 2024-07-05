@@ -32,6 +32,11 @@ class Mesh(NamedTuple):
     tris: np.ndarray
 
 
+class ValueGrad(NamedTuple):
+    value: np.ndarray   # or could be just a float
+    grad: np.ndarray
+
+
 OCTAHEDRON = Mesh(verts=np.array([[1, 0, 0], [0, 1, 0],
                                   [0, 0, 1], [-1, 0, 0],
                                   [0, -1, 0], [0, 0, -1]]),
@@ -121,6 +126,10 @@ def vec_norm(v):
 
 def nzd(v):
     return v / vec_norm(v)
+
+
+def dot_flat(v0, v1):
+    return np.sum(v0 * v1)
 
 
 def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
@@ -358,19 +367,94 @@ def matrix_basis_vecs_to_tri(a, b, c, clamp_to_sphere=False):
 
 
 def gradient_descent(
-        cost_func, # tuple: cost, grad_cost
+        cost_grad_func, # returns ValueGrad
         initial_state,
         *,
         normalize_func=lambda x: x,
-        learning_rate=0.05,
         iteration_count=100,
+        memory=5,
         plot_func=lambda *args, **kwargs: None,
         ):
-    state = initial_state.copy()
+    x = initial_state.copy()
+    s = []
+    y = []
+    rho = []
+    def H(k, g):    # approximation of the inverse hessian times g
+        if k == 0:
+            return g    # H_0 is identity
+        yps_g = g - rho[k-1] * y[k-1] * dot_flat(s[k-1], g)
+        H_prev_yps_g = H(k-1, yps_g)
+        return (H_prev_yps_g
+                - rho[k-1] * s[k-1] * dot_flat(y[k-1], H_prev_yps_g)
+                + rho[k-1] * s[k-1] * dot_flat(s[k-1], g))
+
+    learn_rate = 1
+    cost_grad = cost_grad_func(x)
     for i in range(iteration_count):
-        state -= learning_rate * cost_func(state, i)[1]
-        state = normalize_func(state)
-    return state
+        g = cost_grad.grad
+        if (np.abs(g) < TOLERANCE).all():
+            return x
+        search_dir = -H(len(s), g)
+        x_new, cost_grad_new, learn_rate = line_search(cost_grad_func,
+                                           x,
+                                           cost_grad,
+                                           search_dir,
+                                           learn_rate,
+                                           normalize_func=normalize_func)
+        g_new = cost_grad_new.grad
+        
+        s.append(x_new - x)
+        y.append(g_new - g)
+        rho.append(1 / dot_flat(y[-1], s[-1]))
+        s = s[-memory:]     # throw out oldest memory if necessary
+        y = y[-memory:]
+        rho = rho[-memory:]
+        
+        x = x_new
+        cost_grad = cost_grad_new
+    return x
+
+
+def line_search(cost_grad_func,
+                state,
+                initial_cost_grad,
+                search_dir,
+                initial_learn_rate,
+                *,
+                normalize_func=lambda x: x,
+                tau=0.5,
+                c=0.001):
+    print("START LINE SEARCH")
+    m = dot_flat(search_dir, initial_cost_grad.grad)
+    learn_rate = initial_learn_rate
+    state_new = normalize_func(state + learn_rate * search_dir)
+    cost_grad_new = cost_grad_func(state_new)
+    if (cost_grad_new.value - initial_cost_grad.value
+            <= c * learn_rate * m + TOLERANCE): # starting step is small enough
+        print(f"{learn_rate} is small enough")
+        while True:
+            learn_rate_alt = learn_rate / tau   # try making the step bigger
+            state_alt = normalize_func(state + learn_rate_alt * search_dir)
+            cost_grad_alt = cost_grad_func(state_alt)
+            if (learn_rate_alt > 1
+                    or cost_grad_alt.value - initial_cost_grad.value
+                    > c * learn_rate_alt * m + TOLERANCE): # step is now too big
+                print(f"{learn_rate_alt} is too big")
+                return state_new, cost_grad_new, learn_rate
+            # step is still small enough
+            state_new = state_alt
+            cost_grad_new = cost_grad_alt
+            learn_rate = learn_rate_alt
+    # starting step is too big
+    print(f"{learn_rate} is too big")
+    while True:
+        learn_rate *= tau   # make the step smaller
+        state_new = normalize_func(state + learn_rate * search_dir)
+        cost_grad_new = cost_grad_func(state_new)
+        if (cost_grad_new.value - initial_cost_grad.value
+                <= c * learn_rate * m + TOLERANCE):  # step is now small enough
+            print(f"{learn_rate} is small enough")
+            return state_new, cost_grad_new, learn_rate
 
 
 def clamp_inside_half_space(v, clamp_vec, min_dot):
@@ -437,9 +521,12 @@ def octahedron_equal_area(it_count):
         G0 = matrix_basis_vecs_to_tri(a, b, c)
         G0_array[i] = G0
 
-    def cost_func(verts_state, iteration_ix):
+    def cost_grad_func_maker(weight_dist):
+        return lambda verts_state: cost_grad_func(verts_state, weight_dist)
+    
+    def cost_grad_func(verts_state, weight_dist=0.05):
         weight_area = 1
-        weight_dist = 0.01
+        #weight_dist = 0.05
         cost = 0
         grad_cost = np.zeros_like(verts_state)
         max_ratio_seen = 0
@@ -458,6 +545,8 @@ def octahedron_equal_area(it_count):
             E = G @ G0inv
             E_grad = G_grad @ G0inv
             D = np.linalg.det(E)
+            if D < 0:
+                return ValueGrad(np.inf, np.zeros_like(verts_state))
             F = np.sum(E * E)
             D_grad = (E_grad[..., 0, 0] * E[1, 1]
                       + E[0, 0] * E_grad[..., 1, 1]
@@ -479,7 +568,7 @@ def octahedron_equal_area(it_count):
                 grad_cost[tri[j]] += this_tri_cost_grad_global_coords[j]
             max_ratio_seen = max(max_ratio_seen, D/A, A/D)
         print(max_ratio_seen, cost)
-        return cost, grad_cost
+        return ValueGrad(value=cost, grad=grad_cost)
 
     def normalize_func(verts_state):
         b_over_a = 3**1.5 / 2 * 0.25681278
@@ -496,22 +585,35 @@ def octahedron_equal_area(it_count):
 
     rot_mat = tangent_space_matrix(*OCTAHEDRON.verts[OCTAHEDRON.tris[0]]).T
     initial_state = matrix_times_array_of_vectors(rot_mat, verts_og)[..., 0:2]
-    verts_new = gradient_descent(cost_func,
+    initial_state = normalize_func(initial_state)
+
+    t0 = perf_counter()
+    verts_new = gradient_descent(cost_grad_func_maker(0.05),
                                  initial_state,
                                  iteration_count=it_count,
                                  normalize_func=normalize_func)
+    print("---------------")
+    verts_new = gradient_descent(cost_grad_func_maker(0.001),
+                                 verts_new,
+                                 iteration_count=it_count,
+                                 normalize_func=normalize_func)
+    t1 = perf_counter()
+    print(f"{t1 - t0:.2f} seconds")
+    
     scale_factors = np.array([
         tri_area_plane(*verts_new[tri])/tri_area_plane(*verts_og[tri])
         for tri in tris])
     print(np.min(scale_factors), np.max(scale_factors))
     set_up_plot(0.85, 0.1)
-
+    plot_mesh(Mesh(verts=verts_new, tris=tris))
+    """
     lines = octant_graticule(90)
     for line in lines:
         def to_new_mesh(v):
             return point_old_mesh_to_new(v, verts_og, verts_new, tris)
         line_new = np.apply_along_axis(to_new_mesh, 1, line)
         plot_curve(line_new)
+    """
     return Mesh(verts=verts_new, tris=tris)
 
 
