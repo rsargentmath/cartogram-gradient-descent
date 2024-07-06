@@ -389,18 +389,16 @@ def gradient_descent(
                 - rho[k-1] * s[k-1] * dot_flat(y[k-1], H_prev_yps_g)
                 + rho[k-1] * s[k-1] * dot_flat(s[k-1], g))
 
-    learn_rate = 1
     cost_grad = cost_grad_func(x)
     for i in range(iteration_count):
         g = cost_grad.grad
         if (np.abs(g) < TOLERANCE).all():
             return x
         search_dir = -H(len(s), g)
-        x_new, cost_grad_new, learn_rate = line_search(cost_grad_func,
+        x_new, cost_grad_new = line_search(cost_grad_func,
                                            x,
                                            cost_grad,
                                            search_dir,
-                                           learn_rate,
                                            normalize_func=normalize_func)
         g_new = cost_grad_new.grad
         
@@ -424,43 +422,23 @@ def line_search(cost_grad_func,
                 state,
                 initial_cost_grad,
                 search_dir,
-                initial_learn_rate,
                 *,
                 normalize_func=lambda x: x,
+                initial_learn_rate=1,
                 tau=0.5,
                 c=0.001):
     print("START LINE SEARCH")
     m = dot_flat(search_dir, initial_cost_grad.grad)
     learn_rate = initial_learn_rate
-    state_new = normalize_func(state + learn_rate * search_dir)
-    cost_grad_new = cost_grad_func(state_new)
-    if (cost_grad_new.value - initial_cost_grad.value
-            <= c * learn_rate * m + TOLERANCE): # starting step is small enough
-        print(f"{learn_rate} is small enough")
-        while True:
-            learn_rate_alt = learn_rate / tau   # try making the step bigger
-            if learn_rate_alt > 1:      # step is now too big
-                return state_new, cost_grad_new, learn_rate
-            state_alt = normalize_func(state + learn_rate_alt * search_dir)
-            cost_grad_alt = cost_grad_func(state_alt)
-            if (cost_grad_alt.value - initial_cost_grad.value
-                    > c * learn_rate_alt * m + TOLERANCE): # step is now too big
-                print(f"{learn_rate_alt} is too big")
-                return state_new, cost_grad_new, learn_rate
-            # step is still small enough
-            learn_rate = learn_rate_alt
-            state_new = state_alt
-            cost_grad_new = cost_grad_alt
-    # starting step is too big
-    print(f"{learn_rate} is too big")
     while True:
-        learn_rate *= tau   # make the step smaller
         state_new = normalize_func(state + learn_rate * search_dir)
         cost_grad_new = cost_grad_func(state_new)
         if (cost_grad_new.value - initial_cost_grad.value
-                <= c * learn_rate * m + TOLERANCE):  # step is now small enough
+                <= c * learn_rate * m + TOLERANCE):  # step is small enough
             print(f"{learn_rate} is small enough")
-            return state_new, cost_grad_new, learn_rate
+            return state_new, cost_grad_new
+        print(f"{learn_rate} is too big")
+        learn_rate *= tau   # make the step smaller
 
 
 def clamp_inside_half_space(v, clamp_vec, min_dot):
