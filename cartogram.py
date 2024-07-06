@@ -379,9 +379,10 @@ def gradient_descent(
     s = []
     y = []
     rho = []
+    H_0_scale = 1
     def H(k, g):    # approximation of the inverse hessian times g
         if k == 0:
-            return g    # H_0 is identity
+            return H_0_scale * g    # H_0 is multiple of identity
         yps_g = g - rho[k-1] * y[k-1] * dot_flat(s[k-1], g)
         H_prev_yps_g = H(k-1, yps_g)
         return (H_prev_yps_g
@@ -409,6 +410,10 @@ def gradient_descent(
         s = s[-memory:]     # throw out oldest memory if necessary
         y = y[-memory:]
         rho = rho[-memory:]
+        s0_dot_y0 = dot_flat(s[0], y[0])
+        y0_dot_y0 = dot_flat(y[0], y[0])
+        if s0_dot_y0 > TOLERANCE and y0_dot_y0 > TOLERANCE:
+            H_0_scale = s0_dot_y0 / y0_dot_y0
         
         x = x_new
         cost_grad = cost_grad_new
@@ -434,17 +439,18 @@ def line_search(cost_grad_func,
         print(f"{learn_rate} is small enough")
         while True:
             learn_rate_alt = learn_rate / tau   # try making the step bigger
+            if learn_rate_alt > 1:      # step is now too big
+                return state_new, cost_grad_new, learn_rate
             state_alt = normalize_func(state + learn_rate_alt * search_dir)
             cost_grad_alt = cost_grad_func(state_alt)
-            if (learn_rate_alt > 1
-                    or cost_grad_alt.value - initial_cost_grad.value
+            if (cost_grad_alt.value - initial_cost_grad.value
                     > c * learn_rate_alt * m + TOLERANCE): # step is now too big
                 print(f"{learn_rate_alt} is too big")
                 return state_new, cost_grad_new, learn_rate
             # step is still small enough
+            learn_rate = learn_rate_alt
             state_new = state_alt
             cost_grad_new = cost_grad_alt
-            learn_rate = learn_rate_alt
     # starting step is too big
     print(f"{learn_rate} is too big")
     while True:
@@ -607,7 +613,7 @@ def octahedron_equal_area(it_count):
     set_up_plot(0.85, 0.1)
     plot_mesh(Mesh(verts=verts_new, tris=tris))
     """
-    lines = octant_graticule(90)
+    lines = octant_graticule(18)
     for line in lines:
         def to_new_mesh(v):
             return point_old_mesh_to_new(v, verts_og, verts_new, tris)
