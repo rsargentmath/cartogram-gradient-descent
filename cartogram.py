@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from typing import NamedTuple
 import json
 from time import perf_counter
+from matplotlib.colors import rgb2hex
 
 
 with open("ne_110m_admin_0_countries_lakes_FIXED.json", "r") as f:
@@ -21,6 +22,42 @@ for k, v in import_data.items():
     WORLD_BORDERS_DATA[k] = nonflat_polygon_list
     WORLD_BORDERS_DATA_FLAT[k] = flat_polygon_list
 del import_data
+POPULATION_DICT = {"Afghanistan": 38928340, "Albania": 2837850, "Algeria": 43851040, "Andorra": 77270, "Angola": 32866270, "Antigua and Barbuda": 97930,
+			"Argentina": 45376760, "Armenia": 2963230, "Australia": 25693270, "Austria": 8916860, "Azerbaijan": 10093120, "The Bahamas": 393250,
+			"Bahrain": 1701580, "Bangladesh": 164689380, "Barbados": 287370, "Belarus": 9379950, "Belgium": 11544240, "Belize": 397620, "Benin": 12123200,
+			"Bhutan": 771610, "Bolivia": 11673030, "Bosnia and Herzegovina": 3280820, "Botswana": 2351630, "Brazil": 212559410,
+			"Brunei": 437480, "Bulgaria": 6934020, "Burkina Faso": 20903280, "Burundi": 11890780, "Cabo Verde": 555990, "Cambodia": 16718970, "Cameroon": 26545860,
+			"Canada": 38037200, "Central African Republic": 4829760, "Chad": 16425860, "Chile": 19116210,
+			"China": 1410929360, "Colombia": 50882880, "Comoros": 869600, "Democratic Republic of the Congo": 89561400, "Republic of the Congo": 5518090, "Costa Rica": 5094110, "Ivory Coast": 26378280,
+			"Croatia": 4047680, "Cuba": 11326620, "Cyprus": 881360, "Czechia": 10697860, "Denmark": 5831400, "Djibouti": 988000, "Dominica": 71990,
+			"Dominican Republic": 10847900, "Ecuador": 17643060, "Egypt": 102334400, "El Salvador": 6486200, "Equatorial Guinea": 1402980, "Eritrea": 3213970,
+			"Estonia": 1329480, "eSwatini": 1160160, "Ethiopia": 114963580, "Fiji": 896440, "Finland": 5529540, "France": 67379910,
+			"Gabon": 2225730, "Gambia": 2416660, "Georgia": 3722720, "Germany": 83160870, "Ghana": 31072940,
+			"Greece": 10700560, "Grenada": 112520, "Guatemala": 16858330, "Guinea": 13132790, "Guinea-Bissau": 1968000, "Guyana": 786560,
+			"Haiti": 11402530, "Honduras": 9904610, "Hungary": 9750150, "Iceland": 366460, "India": 1380004390, "Indonesia": 273523620,
+			"Iran": 83992950, "Iraq": 40222500, "Ireland": 4985670, "Israel": 14018370, "Italy": 59449530, "Jamaica": 2961160,
+			"Japan": 125836020, "Jordan": 10203140, "Kazakhstan": 18754440, "Kenya": 53771300, "Kiribati": 119450, "North Korea": 25778810, "South Korea": 51836240,
+			"Kosovo": 1790130, "Kuwait": 4270560, "Kyrgyzstan": 6579900, "Laos": 7275560, "Latvia": 1900450, "Lebanon": 6825440, "Lesotho": 2142250,
+			"Liberia": 5057680, "Libya": 6871290, "Liechtenstein": 38140, "Lithuania": 2794890, "Luxembourg": 630420, "Madagascar": 27691020,
+			"Malawi": 19129960, "Malaysia": 32366000, "Maldives": 540540, "Mali": 20250830, "Malta": 515330, "Marshall Islands": 59190, "Mauritania": 4649660,
+			"Mauritius": 1265740, "Mexico": 128932750, "Federated States of Micronesia": 115020, "Moldova": 2620490, "Monaco": 39240, "Mongolia": 3278290, "Montenegro": 621310,
+			"Morocco": 36343160, "Mozambique": 31255440, "Myanmar": 54409790, "Namibia": 2540920, "Nauru": 10830, "Nepal": 29136810, "Netherlands": 17441500,
+			"New Zealand": 5084300, "Nicaragua": 6624550, "Niger": 24206640, "Nigeria": 206139590, "North Macedonia": 2072530,
+			"Norway": 5379480, "Oman": 5106620, "Pakistan": 220892330, "Palau": 18090, "Panama": 4314770, "Papua New Guinea": 8947030,
+			"Paraguay": 7132530, "Peru": 32971850, "Philippines": 109581090, "Poland": 37899070, "Portugal": 10297080, "Qatar": 2881060,
+			"Romania": 19257520, "Russia": 144104080, "Rwanda": 12952210, "Samoa": 198410, "San Marino": 33940, "São Tomé and Principe": 219160,
+			"Saudi Arabia": 34813870, "Senegal": 16743930, "Republic of Serbia": 6899130, "Seychelles": 98460, "Sierra Leone": 7976980, "Singapore": 5685810,
+			"Slovakia": 5458830, "Slovenia": 2102420, "Solomon Islands": 686880, "Somalia": 10193220, "South Africa": 59308690,
+			"South Sudan": 11193730, "Spain": 47363420, "Sri Lanka": 21919000, "Saint Kitts and Nevis": 53190, "Saint Lucia": 183630,
+			"Saint Vincent and the Grenadines": 110950, "Sudan": 43849270, "Suriname": 586630, "Sweden": 10353440, "Switzerland": 8636560, "Syria": 17500660,
+			"Tajikistan": 9537640, "United Republic of Tanzania": 59734210, "Thailand": 69799980, "East Timor": 1318440, "Togo": 8278740, "Tonga": 105700, "Trinidad and Tobago": 1399490,
+			"Tunisia": 11818620, "Turkey": 84339070, "Turkmenistan": 6031190, "Tuvalu": 11790, "Uganda": 45741000, "Ukraine": 44134690,
+			"United Arab Emirates": 9890400, "United Kingdom": 67215290, "United States of America": 331501080, "Uruguay": 3473730, "Uzbekistan": 34232050, "Vanuatu": 307150,
+			"Venezuela": 28435940, "Vietnam": 97338580, "Yemen": 29825970, "Zambia": 18383960,
+			"Zimbabwe": 14862930, "Antarctica": 3000, "Northern Cyprus": 326000, "Western Sahara": 567400, "Somaliland": 5700000, "Taiwan": 23451840, "Vatican": 800, "Kashmir": 1000}
+POPULATION_ARRAY = np.array([POPULATION_DICT[k]
+                             for k in WORLD_BORDERS_DATA_FLAT.keys()],
+                            dtype=float)
 
 
 TOLERANCE = 1e-12
@@ -249,7 +286,7 @@ def portion_of_tri_inside_polygon_plane(a, b, c, polygon):
     return area_portion
 
 
-def lonlat_to_cartesian(lonlat):
+def lonlat_to_cartes(lonlat):
     lon, lat = lonlat
     return np.array([np.cos(lon) * np.cos(lat),
                     np.sin(lon) * np.cos(lat),
@@ -373,7 +410,7 @@ def gradient_descent(
         normalize_func=lambda x: x,
         iteration_count=100,
         memory=5,
-        plot_func=lambda *args, **kwargs: None,
+        grad_tolerance=1e-5,
         ):
     x = initial_state.copy()
     s = []
@@ -393,7 +430,7 @@ def gradient_descent(
     cost_grad = cost_grad_func(x)
     for i in range(iteration_count):
         g = cost_grad.grad
-        if (np.abs(g) < TOLERANCE).all():
+        if (np.abs(g) < grad_tolerance).all():
             return x
         search_dir = -H(len(s), g)
         x_new, cost_grad_new, learn_rate = line_search(cost_grad_func,
@@ -428,7 +465,7 @@ def line_search(cost_grad_func,
                 *,
                 normalize_func=lambda x: x,
                 tau=0.5,
-                c=0.001):
+                c=0.1):
     print("START LINE SEARCH")
     m = dot_flat(search_dir, initial_cost_grad.grad)
     learn_rate = initial_learn_rate
@@ -437,7 +474,7 @@ def line_search(cost_grad_func,
     if (cost_grad_new.value - initial_cost_grad.value
             <= c * learn_rate * m + TOLERANCE): # starting step is small enough
         print(f"{learn_rate} is small enough")
-        while True:
+        for i in range(5):
             learn_rate_alt = learn_rate / tau   # try making the step bigger
             if learn_rate_alt > 1:      # step is now too big
                 return state_new, cost_grad_new, learn_rate
@@ -451,6 +488,8 @@ def line_search(cost_grad_func,
             learn_rate = learn_rate_alt
             state_new = state_alt
             cost_grad_new = cost_grad_alt
+            if i == 4:
+                return state_new, cost_grad_new, learn_rate
     # starting step is too big
     print(f"{learn_rate} is too big")
     while True:
@@ -516,6 +555,147 @@ def point_old_mesh_to_new(v, verts_old, verts_new, tris):
             return point_old_tri_to_new(v, *verts_old[tri], *verts_new[tri])
 
 
+def tri_det_frob_value_grads(a, b, c, G0, G):
+    G0inv = np.linalg.inv(G0)
+    # gradient where we're moving a, b, c using the tan space coords
+    G_grad = np.array([[[[-1, -1], [0, 0]], [[0, 0], [-1, -1]]],
+                       [[[1, 0], [0, 0]], [[0, 0], [1, 0]]],
+                       [[[0, 1], [0, 0]], [[0, 0], [0, 1]]]])
+    E = G @ G0inv
+    E_grad = G_grad @ G0inv
+    D = np.linalg.det(E)
+    F = np.sum(E * E)
+    D_grad = (E_grad[..., 0, 0] * E[1, 1]
+              + E[0, 0] * E_grad[..., 1, 1]
+              - E_grad[..., 0, 1] * E[1, 0]
+              - E[0, 1] * E_grad[..., 1, 0])
+    F_grad = 2 * (E[0, 0] * E_grad[..., 0, 0]
+                  + E[0, 1] * E_grad[..., 0, 1]
+                  + E[1, 0] * E_grad[..., 1, 0]
+                  + E[1, 1] * E_grad[..., 1, 1])
+    det_value_grad = ValueGrad(value=D, grad=D_grad)
+    frob_value_grad = ValueGrad(value=F, grad=F_grad)
+    return det_value_grad, frob_value_grad
+
+
+def area_portions_array(mesh, borders_data_flat):
+    
+    def tri_area_portions(tri):
+        portions = []
+        for region in borders_data_flat.values():
+            this_region_portion = 0
+            for polygon_lonlat in region:
+                polygon = np.apply_along_axis(lonlat_to_cartes,
+                                              1,
+                                              polygon_lonlat)
+                this_region_portion += portion_of_tri_inside_polygon_sphere(
+                        *mesh.verts[tri], polygon)
+            portions.append(this_region_portion)
+        return np.array(portions)
+    
+    return np.apply_along_axis(tri_area_portions, 1, mesh.tris)
+
+
+def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
+    verts_og, tris = mesh.verts, mesh.tris
+    G0_array = np.apply_along_axis(
+        lambda tri: matrix_basis_vecs_to_tri(*verts_og[tri], clamp_to_sphere),
+        1,
+        tris)
+    M0_array = np.array([1/2 * np.linalg.det(G0) for G0 in G0_array])
+    tri_region_areas_og = M0_array[:, np.newaxis] * portions
+            # absolute area of each region falling in each tri
+    region_areas_og = np.sum(tri_region_areas_og, axis=0)
+    world_pop_density = np.sum(pop_array) / np.sum(region_areas_og)
+    region_areas_intended = pop_array / world_pop_density
+    region_scales_intended = region_areas_intended / region_areas_og
+    land_portions = np.sum(portions, axis=1)
+    tri_scales_intended = (np.sum(portions * region_scales_intended, axis=1)
+                           + 1 - land_portions)
+    print(np.min(region_scales_intended), np.max(region_scales_intended))
+    print(list(WORLD_BORDERS_DATA_FLAT.keys())[np.argmin(region_scales_intended)],
+          list(WORLD_BORDERS_DATA_FLAT.keys())[np.argmax(region_scales_intended)])
+
+    def cost_grad_func_maker(weights_dist, weights_area, weight_error):
+
+        def cost_grad_func(verts):
+            cost = 0
+            cost_grad = np.zeros_like(verts)
+            G_array = np.apply_along_axis(
+                lambda tri: matrix_basis_vecs_to_tri(*verts[tri],
+                                                     clamp_to_sphere),
+                1,
+                tris)
+            M_array = np.array([1/2 * np.linalg.det(G) for G in G_array])
+            tolerance = 1e-14
+            if np.min(M_array) < tolerance: # topology is violated
+                return ValueGrad(value=np.inf, grad=np.zeros_like(verts))
+            tri_region_areas = M_array[:, np.newaxis] * portions
+            region_areas = np.sum(tri_region_areas, axis=0)
+            region_errors = region_areas - region_areas_intended
+            cost_error = np.sum(region_errors * region_errors)
+            cost += weight_error * cost_error
+            for i, tri in enumerate(tris):
+                G0 = G0_array[i]
+                M0 = M0_array[i]
+                G = G_array[i]
+                A = tri_scales_intended[i]
+                tan_space_mat = tangent_space_matrix(*verts[tri],
+                                                     clamp_to_sphere)
+                (D, D_grad), (F, F_grad) = tri_det_frob_value_grads(*verts[tri],
+                                                                    G0, G)
+                cost_dist = M0 * (F/D - 2)
+                cost_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
+                cost_area = M0 * (D/A + A/D - 2)
+                cost_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
+                cost_error_grad = (2 * M0
+                                   * np.sum(portions[i] * region_errors)
+                                   * D_grad)
+
+                cost += (weights_dist[i] * cost_dist
+                         + weights_area[i] * cost_area)
+                
+                tri_cost_grad = (weights_dist[i] * cost_dist_grad
+                                 + weights_area[i] * cost_area_grad
+                                 + weight_error * cost_error_grad)
+                tri_cost_grad_global_coords = matrix_times_array_of_vectors(
+                                                       tan_space_mat[:, 0:2],
+                                                       tri_cost_grad)
+                for j in range(3):
+                    cost_grad[tri[j]] += tri_cost_grad_global_coords[j]
+            print(cost)
+            return ValueGrad(cost, cost_grad)
+
+        return cost_grad_func
+
+    def normalize_func(verts):
+        return np.apply_along_axis(nzd, 1, verts)
+
+    verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
+    
+    weights_dist = np.full_like(M0_array, 0.05)
+    weights_area = np.full_like(M0_array, 0.0)
+    weight_error = 1
+    verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
+                                                      weights_area,
+                                                      weight_error),
+                                 verts_new,
+                                 iteration_count=max_iterations,
+                                 normalize_func=normalize_func,
+                                 grad_tolerance=1e-2)
+    set_up_plot(1.02, 0)
+    for i, tri in enumerate(mesh.tris):
+        a, b, c = verts_new[tri]
+        if a.shape[0] == 3:
+            if np.cross(b-a, c-a)[2] <= 0:
+                continue
+        a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
+        xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
+        color = rgb2hex((0, np.clip(land_portions[i], 0, 1), 0))
+        plt.fill(xs, ys, color)
+    return Mesh(verts=verts_new, tris=tris)
+
+
 def octahedron_equal_area(it_count):
     mesh = subdivide_tri_sphere(*OCTAHEDRON.verts[OCTAHEDRON.tris[0]], 48)
     verts_og, tris = mesh.verts, mesh.tris
@@ -540,28 +720,10 @@ def octahedron_equal_area(it_count):
             a, b, c = verts_state[tri]
             A = 1   # desired area scale
             G0 = G0_array[i]
-            G0inv = np.linalg.inv(G0)
             M0 = 1/2 * np.linalg.det(G0)
             tan_space_mat = tangent_space_matrix(a, b, c, False)
             G = matrix_basis_vecs_to_tri(a, b, c, False)
-            # gradient where we're moving a, b, c using the tan space coords
-            G_grad = np.array([[[[-1, -1], [0, 0]], [[0, 0], [-1, -1]]],
-                               [[[1, 0], [0, 0]], [[0, 0], [1, 0]]],
-                               [[[0, 1], [0, 0]], [[0, 0], [0, 1]]]])
-            E = G @ G0inv
-            E_grad = G_grad @ G0inv
-            D = np.linalg.det(E)
-            if D < 0:
-                return ValueGrad(np.inf, np.zeros_like(verts_state))
-            F = np.sum(E * E)
-            D_grad = (E_grad[..., 0, 0] * E[1, 1]
-                      + E[0, 0] * E_grad[..., 1, 1]
-                      - E_grad[..., 0, 1] * E[1, 0]
-                      - E[0, 1] * E_grad[..., 1, 0])
-            F_grad = 2 * (E[0, 0] * E_grad[..., 0, 0]
-                          + E[0, 1] * E_grad[..., 0, 1]
-                          + E[1, 0] * E_grad[..., 1, 0]
-                          + E[1, 1] * E_grad[..., 1, 1])
+            (D, D_grad), (F, F_grad) = tri_det_frob_value_grads(a, b, c, G0, G)
             this_tri_cost = M0 * (weight_dist * (F/D - 2)
                                   + weight_area * (D/A + A/D - 2))
             this_tri_cost_grad = M0 * (weight_dist * (F_grad*D - F*D_grad)/(D*D)
@@ -591,18 +753,21 @@ def octahedron_equal_area(it_count):
 
     rot_mat = tangent_space_matrix(*OCTAHEDRON.verts[OCTAHEDRON.tris[0]]).T
     initial_state = matrix_times_array_of_vectors(rot_mat, verts_og)[..., 0:2]
-    initial_state = normalize_func(initial_state)
+    #initial_state = normalize_func(initial_state)
 
     t0 = perf_counter()
-    verts_new = gradient_descent(cost_grad_func_maker(0.05),
+    verts_new = gradient_descent(cost_grad_func_maker(0.2),
                                  initial_state,
                                  iteration_count=it_count,
-                                 normalize_func=normalize_func)
-    print("---------------")
+                                 #normalize_func=normalize_func)
+                                 grad_tolerance=1e-2,
+                                 )
     verts_new = gradient_descent(cost_grad_func_maker(0.001),
-                                 verts_new,
+                                 initial_state,
                                  iteration_count=it_count,
-                                 normalize_func=normalize_func)
+                                 #normalize_func=normalize_func)
+                                 grad_tolerance=1e-5,
+                                 )
     t1 = perf_counter()
     print(f"{t1 - t0:.2f} seconds")
     
@@ -631,7 +796,7 @@ def octant_graticule(n, resolution=0.005):
         end = np.array([lon, np.pi/2])
         num_points = int(np.ceil(np.pi/(2*resolution))) + 1
         line_lonlat = np.linspace(start, end, num_points)
-        line = np.apply_along_axis(lonlat_to_cartesian, 1, line_lonlat)
+        line = np.apply_along_axis(lonlat_to_cartes, 1, line_lonlat)
         lines.append(line)
     for i in range(n):
         lat = np.pi/2 * i/n
@@ -639,7 +804,7 @@ def octant_graticule(n, resolution=0.005):
         end = np.array([np.pi/2, lat])
         num_points = int(np.ceil(np.pi/(2*resolution) * np.cos(lat))) + 1
         line_lonlat = np.linspace(start, end, num_points)
-        line = np.apply_along_axis(lonlat_to_cartesian, 1, line_lonlat)
+        line = np.apply_along_axis(lonlat_to_cartes, 1, line_lonlat)
         lines.append(line)
     return lines
 
