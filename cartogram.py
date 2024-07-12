@@ -173,6 +173,10 @@ def norm_flat(v):
     return np.sqrt(dot_flat(v, v))
 
 
+def dot_nzd_flat(v0, v1):
+    return dot_flat(v0, v1) / (norm_flat(v0) * norm_flat(v1))
+
+
 def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
     assert a0.shape[0] == 2
     if abs(np.cross(a1-a0, b1-b0)) < TOLERANCE:     # if close to parallel
@@ -437,22 +441,29 @@ def gradient_descent(
         if (np.abs(g) < grad_tolerance).all():
             return x
         search_dir = -H(len(s), g)
-        descent_dot = (dot_flat(g, search_dir)
-                       / (norm_flat(g) * norm_flat(search_dir)))
-        print(f"descent dot {descent_dot:.5f}")
-        if descent_dot > -0.2:
+        search_dir_local = -H_0_scale * g
+        descent_dot = dot_nzd_flat(g, search_dir)
+        if descent_dot >= 0 or H_0_scale < TOLERANCE:
             s = []
             y = []
             rho = []
+            H_0_scale = 1
             search_dir = -H(len(s), g)
+            search_dir_local = -H_0_scale * g
+            descent_dot = dot_nzd_flat(g, search_dir)
         
         x_new, cost_grad_new, learn_rate = line_search(cost_grad_func,
                                            x,
                                            cost_grad,
                                            search_dir,
+                                           search_dir_local,
                                            learn_rate,
                                            normalize_func=normalize_func)
         g_new = cost_grad_new.grad
+
+        print(f"descent dot {descent_dot:.5f}")
+        descent_dot = dot_nzd_flat(g, x_new - x)
+        print(f"actual descent dot {descent_dot:.5f}")
         
         s.append(x_new - x)
         y.append(g_new - g)
@@ -474,41 +485,41 @@ def line_search(cost_grad_func,
                 state,
                 initial_cost_grad,
                 search_dir,
+                search_dir_local,
                 initial_learn_rate,
                 *,
                 normalize_func=lambda x: x,
                 tau=0.5,
                 c=0.1):
     print("START LINE SEARCH")
-    m = dot_flat(search_dir, initial_cost_grad.grad)
     learn_rate = initial_learn_rate
-    state_new = normalize_func(state + learn_rate * search_dir)
+    step_new = learn_rate * (learn_rate * search_dir
+                             + (1 - learn_rate) * search_dir_local)
+    state_new = normalize_func(state + step_new)
     cost_grad_new = cost_grad_func(state_new)
 
-    def is_okay(cost_grad, rate):
+    def is_okay(cost_grad, step):
+        grad_inc_threshold = 1.5
         return ((cost_grad.value - initial_cost_grad.value
-                 <= c * rate * m + TOLERANCE)
+                 <= c * dot_flat(initial_cost_grad.grad, step) + TOLERANCE)
                 and (norm_flat(cost_grad.grad)
-                     < 2 * norm_flat(initial_cost_grad.grad)))
+                     < grad_inc_threshold * norm_flat(initial_cost_grad.grad)))
     
-    if is_okay(cost_grad_new, learn_rate): # starting step is small enough
+    if is_okay(cost_grad_new, step_new): # starting step is small enough
         print(f"{learn_rate} is small enough")
-        learn_rate_alt = learn_rate / tau   # try making the step bigger
-        if learn_rate_alt > 1:      # step is now too big
-            return state_new, cost_grad_new, learn_rate
-        state_alt = normalize_func(state + learn_rate_alt * search_dir)
-        cost_grad_alt = cost_grad_func(state_alt)
-        if not is_okay(cost_grad_alt, learn_rate_alt): # step is now too big
-            print(f"{learn_rate_alt} is too big")
-            return state_new, cost_grad_new, learn_rate
-        return state_alt, cost_grad_alt, learn_rate_alt
+        learn_rate_alt = learn_rate / tau   # make the step bigger
+        if learn_rate_alt <= 1:
+            learn_rate = learn_rate_alt
+        return state_new, cost_grad_new, learn_rate
     # starting step is too big
     print(f"{learn_rate} is too big")
     while True:
         learn_rate *= tau   # make the step smaller
-        state_new = normalize_func(state + learn_rate * search_dir)
+        step_new = learn_rate * (learn_rate * search_dir
+                                 + (1 - learn_rate) * search_dir_local)
+        state_new = normalize_func(state + step_new)
         cost_grad_new = cost_grad_func(state_new)
-        if is_okay(cost_grad_new, learn_rate):  # step is now small enough
+        if is_okay(cost_grad_new, step_new):  # step is now small enough
             print(f"{learn_rate} is small enough")
             return state_new, cost_grad_new, learn_rate
 
@@ -656,8 +667,8 @@ def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
                                                                     G0, G)
                 cost_dist = M0 * (F/D - 2)
                 cost_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
-                cost_area = M0 * (D/A + A/D - 2)
-                cost_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
+                cost_area = M0 * np.log(D/A)**2
+                cost_area_grad = M0 * 2 * np.log(D/A) * D_grad / D
                 cost_error_grad = (2 * M0
                                    * np.sum(portions[i] * region_errors)
                                    * D_grad)
@@ -686,7 +697,7 @@ def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
     verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
     
     weights_dist = np.full_like(M0_array, 0.01)
-    weights_area = np.full_like(M0_array, 0.0)
+    weights_area = np.full_like(M0_array, 0.01)
     weight_error = 1
     verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
                                                       weights_area,
