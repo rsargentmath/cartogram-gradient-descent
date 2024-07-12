@@ -169,6 +169,10 @@ def dot_flat(v0, v1):
     return np.sum(v0 * v1)
 
 
+def norm_flat(v):
+    return np.sqrt(dot_flat(v, v))
+
+
 def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
     assert a0.shape[0] == 2
     if abs(np.cross(a1-a0, b1-b0)) < TOLERANCE:     # if close to parallel
@@ -433,6 +437,15 @@ def gradient_descent(
         if (np.abs(g) < grad_tolerance).all():
             return x
         search_dir = -H(len(s), g)
+        descent_dot = (dot_flat(g, search_dir)
+                       / (norm_flat(g) * norm_flat(search_dir)))
+        print(f"descent dot {descent_dot:.5f}")
+        if descent_dot > -0.2:
+            s = []
+            y = []
+            rho = []
+            search_dir = -H(len(s), g)
+        
         x_new, cost_grad_new, learn_rate = line_search(cost_grad_func,
                                            x,
                                            cost_grad,
@@ -471,33 +484,31 @@ def line_search(cost_grad_func,
     learn_rate = initial_learn_rate
     state_new = normalize_func(state + learn_rate * search_dir)
     cost_grad_new = cost_grad_func(state_new)
-    if (cost_grad_new.value - initial_cost_grad.value
-            <= c * learn_rate * m + TOLERANCE): # starting step is small enough
+
+    def is_okay(cost_grad, rate):
+        return ((cost_grad.value - initial_cost_grad.value
+                 <= c * rate * m + TOLERANCE)
+                and (norm_flat(cost_grad.grad)
+                     < 2 * norm_flat(initial_cost_grad.grad)))
+    
+    if is_okay(cost_grad_new, learn_rate): # starting step is small enough
         print(f"{learn_rate} is small enough")
-        for i in range(5):
-            learn_rate_alt = learn_rate / tau   # try making the step bigger
-            if learn_rate_alt > 1:      # step is now too big
-                return state_new, cost_grad_new, learn_rate
-            state_alt = normalize_func(state + learn_rate_alt * search_dir)
-            cost_grad_alt = cost_grad_func(state_alt)
-            if (cost_grad_alt.value - initial_cost_grad.value
-                    > c * learn_rate_alt * m + TOLERANCE): # step is now too big
-                print(f"{learn_rate_alt} is too big")
-                return state_new, cost_grad_new, learn_rate
-            # step is still small enough
-            learn_rate = learn_rate_alt
-            state_new = state_alt
-            cost_grad_new = cost_grad_alt
-            if i == 4:
-                return state_new, cost_grad_new, learn_rate
+        learn_rate_alt = learn_rate / tau   # try making the step bigger
+        if learn_rate_alt > 1:      # step is now too big
+            return state_new, cost_grad_new, learn_rate
+        state_alt = normalize_func(state + learn_rate_alt * search_dir)
+        cost_grad_alt = cost_grad_func(state_alt)
+        if not is_okay(cost_grad_alt, learn_rate_alt): # step is now too big
+            print(f"{learn_rate_alt} is too big")
+            return state_new, cost_grad_new, learn_rate
+        return state_alt, cost_grad_alt, learn_rate_alt
     # starting step is too big
     print(f"{learn_rate} is too big")
     while True:
         learn_rate *= tau   # make the step smaller
         state_new = normalize_func(state + learn_rate * search_dir)
         cost_grad_new = cost_grad_func(state_new)
-        if (cost_grad_new.value - initial_cost_grad.value
-                <= c * learn_rate * m + TOLERANCE):  # step is now small enough
+        if is_okay(cost_grad_new, learn_rate):  # step is now small enough
             print(f"{learn_rate} is small enough")
             return state_new, cost_grad_new, learn_rate
 
@@ -627,8 +638,7 @@ def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
                 1,
                 tris)
             M_array = np.array([1/2 * np.linalg.det(G) for G in G_array])
-            tolerance = 1e-14
-            if np.min(M_array) < tolerance: # topology is violated
+            if np.min(M_array) < TOLERANCE: # topology is violated
                 return ValueGrad(value=np.inf, grad=np.zeros_like(verts))
             tri_region_areas = M_array[:, np.newaxis] * portions
             region_areas = np.sum(tri_region_areas, axis=0)
@@ -663,17 +673,19 @@ def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
                                                        tri_cost_grad)
                 for j in range(3):
                     cost_grad[tri[j]] += tri_cost_grad_global_coords[j]
-            print(cost)
+            print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
             return ValueGrad(cost, cost_grad)
 
         return cost_grad_func
 
     def normalize_func(verts):
-        return np.apply_along_axis(nzd, 1, verts)
+        if clamp_to_sphere:
+            return np.apply_along_axis(nzd, 1, verts)
+        return verts
 
     verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
     
-    weights_dist = np.full_like(M0_array, 0.05)
+    weights_dist = np.full_like(M0_array, 0.01)
     weights_area = np.full_like(M0_array, 0.0)
     weight_error = 1
     verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
@@ -693,6 +705,7 @@ def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
         xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
         color = rgb2hex((0, np.clip(land_portions[i], 0, 1), 0))
         plt.fill(xs, ys, color)
+    plot_mesh(Mesh(verts=verts_new, tris=tris))
     return Mesh(verts=verts_new, tris=tris)
 
 
@@ -831,7 +844,7 @@ def plot_mesh(mesh):
                 continue
         a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
         xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
-        plt.plot(xs, ys)
+        plt.plot(xs, ys, c="b", linewidth=0.2)
 
 
 def main():
