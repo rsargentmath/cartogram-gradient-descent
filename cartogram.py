@@ -196,10 +196,12 @@ def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
     cross_a = np.cross(norm_a, point)
     cross_b = np.cross(norm_b, point)
     if not infinite_a:
-        if cross_a > max_cross_a or cross_a < min_cross_a:
+        if (cross_a > max_cross_a + TOLERANCE
+                or cross_a < min_cross_a - TOLERANCE):
             return None
     if not infinite_b:
-        if cross_b > max_cross_b or cross_b < min_cross_b:
+        if (cross_b > max_cross_b + TOLERANCE
+                or cross_b < min_cross_b - TOLERANCE):
             return None
     return point
 
@@ -301,6 +303,22 @@ def lonlat_to_cartes(lonlat):
                     np.sin(lat)])
 
 
+def cartes_to_lonlat(v):
+    x, y, z = v
+    if abs(x) < TOLERANCE and abs(y) < TOLERANCE:
+        return np.array([0, np.arcsin(z)])
+    return np.array([np.arctan2(y, x), np.arcsin(z)])
+
+
+def hammer_projection(lonlat):
+    lon, lat = lonlat
+    x = (2**1.5 * np.cos(lat) * np.sin(lon/2)
+         / np.sqrt(1 + np.cos(lat) * np.cos(lon/2)))
+    y = (2**0.5 * np.sin(lat)
+         / np.sqrt(1 + np.cos(lat) * np.cos(lon/2)))
+    return np.array([x, y])
+
+
 def tri_area_plane(a, b, c):
     if a.shape[0] == 2:
         return 1/2 * np.cross(b-a, c-a)
@@ -382,6 +400,57 @@ def subdivide_mesh_sphere(mesh, n):
     old_ixs_to_final = new_ixs_to_final[old_ixs_to_new]
     tris_final = old_ixs_to_final[tris]
     return Mesh(verts=verts_final, tris=tris_final)
+
+
+def subdivide_octahedron_interrupted(n):
+    mesh = OCTAHEDRON
+    # Subdivide each mesh triangle. Store new vertices and triangles.
+    verts_og, tris_og = mesh.verts, mesh.tris
+    verts_subdiv_list = []
+    tris_subdiv_list = []
+    verts_per_og_tri = ((n + 1) * (n + 2)) // 2
+    verts_og_centers_list = []
+    for i, tri in enumerate(tris_og):
+        verts_new, tris_new = subdivide_tri_sphere(*verts_og[tri], n)
+        verts_subdiv_list.append(verts_new)
+        tris_subdiv_list.append(tris_new + i*verts_per_og_tri)
+
+        a, b, c = verts_og[tri]
+        center = (a + b + c) / 3
+        verts_og_centers_list += [center] * verts_per_og_tri
+    verts = np.concatenate(verts_subdiv_list)
+    tris = np.concatenate(tris_subdiv_list)
+    verts_og_centers = np.array(verts_og_centers_list)
+    verts_proj_list = []
+    for i, v in enumerate(verts):
+        lonlat = cartes_to_lonlat(v)
+        if abs(abs(lonlat[0]) - np.pi) < TOLERANCE:
+            lonlat[0] = np.pi * np.sign(verts_og_centers[i, 1])
+        verts_proj_list.append(hammer_projection(lonlat))
+    verts_proj = np.array(verts_proj_list)
+
+    edge_vert_ixs = tri_edge_vert_indices(n)
+    ixs_to_check = np.concatenate( # edge indices to check for duplicates
+        [edge_vert_ixs + i*verts_per_og_tri for i in range(tris_og.shape[0])])
+    first_seen_ixs = []
+    old_ixs_to_new = np.arange(verts.shape[0])
+    for ix in ixs_to_check:
+        for seen_ix in first_seen_ixs:
+            if vec_norm(verts_proj[ix] - verts_proj[seen_ix]) < TOLERANCE:
+                old_ixs_to_new[ix] = seen_ix
+                break
+        else: # nobreak
+            first_seen_ixs.append(ix)
+
+    ixs_unique = np.unique(old_ixs_to_new)
+    verts_final = verts[ixs_unique]
+    verts_proj_final = verts_proj[ixs_unique]
+    new_ixs_to_final = np.arange(verts.shape[0])
+    for i, val in enumerate(ixs_unique):
+        new_ixs_to_final[val] = i
+    old_ixs_to_final = new_ixs_to_final[old_ixs_to_new]
+    tris_final = old_ixs_to_final[tris]
+    return Mesh(verts=verts_final, tris=tris_final), verts_proj_final
 
 
 def tangent_space_matrix(a, b, c, clamp_to_sphere=False):
@@ -618,7 +687,12 @@ def area_portions_array(mesh, borders_data_flat):
     return np.apply_along_axis(tri_area_portions, 1, mesh.tris)
 
 
-def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
+def cartogram(mesh,
+              portions,
+              pop_array,
+              max_iterations,
+              clamp_to_sphere,
+              initial_verts=None):
     verts_og, tris = mesh.verts, mesh.tris
     G0_array = np.apply_along_axis(
         lambda tri: matrix_basis_vecs_to_tri(*verts_og[tri], clamp_to_sphere),
@@ -694,7 +768,10 @@ def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
             return np.apply_along_axis(nzd, 1, verts)
         return verts
 
-    verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
+    if initial_verts is not None:
+        verts_new = initial_verts.copy()
+    else:
+        verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
     
     weights_dist = np.full_like(M0_array, 0.01)
     weights_area = np.full_like(M0_array, 0.01)
@@ -706,7 +783,7 @@ def cartogram(mesh, portions, pop_array, max_iterations, clamp_to_sphere):
                                  iteration_count=max_iterations,
                                  normalize_func=normalize_func,
                                  grad_tolerance=1e-2)
-    set_up_plot(1.02, 0)
+    set_up_plot(3, 1.5)
     for i, tri in enumerate(mesh.tris):
         a, b, c = verts_new[tri]
         if a.shape[0] == 3:
@@ -839,11 +916,11 @@ def plot_curve(curve):
     plt.plot(xs, ys, c="0", linewidth=0.8)
 
 
-def set_up_plot(lims=1.1, y_offset=0):
+def set_up_plot(xlim=1.02, ylim=1.02, y_offset=0):
     plt.cla()
     plt.gca().set_aspect("equal")
-    plt.gca().set_xlim(-lims, lims)
-    plt.gca().set_ylim(-lims + y_offset, lims + y_offset)
+    plt.gca().set_xlim(-xlim, xlim)
+    plt.gca().set_ylim(-ylim + y_offset, ylim + y_offset)
     plt.show()
 
 
