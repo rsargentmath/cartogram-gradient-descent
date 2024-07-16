@@ -453,16 +453,29 @@ def subdivide_octahedron_interrupted(n):
     return Mesh(verts=verts_final, tris=tris_final), verts_proj_final
 
 
-def tangent_space_matrix(a, b, c, clamp_to_sphere=False):
+def clamp_to_tangent_space(a, b, c):
+    center = nzd((a + b + c) / 3)
+    a1 = a - (a @ center) * center
+    b1 = b - (b @ center) * center
+    c1 = c - (c @ center) * center
+    return a1, b1, c1
+
+
+def tangent_space_matrix(a, b, c,
+                         clamp_to_sphere=False,
+                         clamp_to_tan_space=False):
     dim = a.shape[0]
     assert dim == 2 or dim == 3
     if dim == 2:
         return np.identity(2)
-    
+
+    a1, b1, c1 = a, b, c
+    if clamp_to_sphere and clamp_to_tan_space:
+        a1, b1, c1 = clamp_to_tangent_space(a, b, c)
     assert vec_norm(np.cross(b-a, c-a)) >= TOLERANCE
-    t = nzd(b - a)
-    n = nzd(np.cross(b-a, c-a))
-    if clamp_to_sphere and n @ a < 0:
+    t = nzd(b1 - a1)
+    n = nzd(np.cross(b1-a1, c1-a1))
+    if clamp_to_sphere and n @ (a + b + c) < 0:
         n = -n
     s = np.cross(n, t)
     return np.column_stack([t, s, n])
@@ -475,9 +488,14 @@ def matrix_basis_vecs_to_tri(a, b, c, clamp_to_sphere=False):
     if dim == 2:
         return np.column_stack([b-a, c-a])
 
-    tan_space_mat = tangent_space_matrix(a, b, c, clamp_to_sphere)
+    tan_space_mat = tangent_space_matrix(a, b, c,
+                                         clamp_to_sphere,
+                                         clamp_to_tan_space=clamp_to_sphere)
     tan_space_inv = tan_space_mat.T
-    return tan_space_inv[0:2] @ np.column_stack([b-a, c-a])
+    a1, b1, c1 = a, b, c
+    if clamp_to_sphere:
+        a1, b1, c1 = clamp_to_tangent_space(a, b, c)
+    return tan_space_inv[0:2] @ np.column_stack([b1-a1, c1-a1])
 
 
 def gradient_descent(
@@ -568,7 +586,7 @@ def line_search(cost_grad_func,
     cost_grad_new = cost_grad_func(state_new)
 
     def is_okay(cost_grad, step):
-        grad_inc_threshold = 1.5
+        grad_inc_threshold = 5
         return ((cost_grad.value - initial_cost_grad.value
                  <= c * dot_flat(initial_cost_grad.grad, step) + TOLERANCE)
                 and (norm_flat(cost_grad.grad)
@@ -695,7 +713,7 @@ def cartogram(mesh,
               initial_verts=None):
     verts_og, tris = mesh.verts, mesh.tris
     G0_array = np.apply_along_axis(
-        lambda tri: matrix_basis_vecs_to_tri(*verts_og[tri], clamp_to_sphere),
+        lambda tri: matrix_basis_vecs_to_tri(*verts_og[tri], False),
         1,
         tris)
     M0_array = np.array([1/2 * np.linalg.det(G0) for G0 in G0_array])
@@ -724,6 +742,7 @@ def cartogram(mesh,
                 tris)
             M_array = np.array([1/2 * np.linalg.det(G) for G in G_array])
             if np.min(M_array) < TOLERANCE: # topology is violated
+                print("inf")
                 return ValueGrad(value=np.inf, grad=np.zeros_like(verts))
             tri_region_areas = M_array[:, np.newaxis] * portions
             region_areas = np.sum(tri_region_areas, axis=0)
@@ -773,8 +792,8 @@ def cartogram(mesh,
     else:
         verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
     
-    weights_dist = np.full_like(M0_array, 0.01)
-    weights_area = np.full_like(M0_array, 0.01)
+    weights_dist = 0.05 * (0.1 + 0.9 * land_portions)
+    weights_area = 0.01 * (0.1 + 0.9 * land_portions)
     weight_error = 1
     verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
                                                       weights_area,
@@ -783,6 +802,18 @@ def cartogram(mesh,
                                  iteration_count=max_iterations,
                                  normalize_func=normalize_func,
                                  grad_tolerance=1e-2)
+
+    weights_dist = 0.0005 * (0.1 + 0.9 * land_portions)
+    weights_area = 0.0001 * (0.1 + 0.9 * land_portions)
+    weight_error = 1
+    verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
+                                                      weights_area,
+                                                      weight_error),
+                                 verts_new,
+                                 iteration_count=max_iterations,
+                                 normalize_func=normalize_func,
+                                 grad_tolerance=1e-2)
+    
     set_up_plot(3, 1.5)
     for i, tri in enumerate(mesh.tris):
         a, b, c = verts_new[tri]
