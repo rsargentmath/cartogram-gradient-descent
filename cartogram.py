@@ -402,7 +402,7 @@ def subdivide_mesh_sphere(mesh, n):
     return Mesh(verts=verts_final, tris=tris_final)
 
 
-def subdivide_octahedron_interrupted(n):
+def subdivide_octahedron_interrupted(n, shift_degrees=0):
     mesh = OCTAHEDRON
     # Subdivide each mesh triangle. Store new vertices and triangles.
     verts_og, tris_og = mesh.verts, mesh.tris
@@ -450,7 +450,39 @@ def subdivide_octahedron_interrupted(n):
         new_ixs_to_final[val] = i
     old_ixs_to_final = new_ixs_to_final[old_ixs_to_new]
     tris_final = old_ixs_to_final[tris]
+
+    shift = np.deg2rad(shift_degrees)
+    shift_mat = np.array([[np.cos(shift), -np.sin(shift), 0],
+                          [np.sin(shift), np.cos(shift), 0],
+                          [0, 0, 1]])
+    verts_final = matrix_times_array_of_vectors(shift_mat, verts_final)
     return Mesh(verts=verts_final, tris=tris_final), verts_proj_final
+
+
+def mesh_edges_dict(mesh):
+    edges_dict = {}
+    for i, tri in enumerate(mesh.tris):
+        for j in range(3):
+            pt0, pt1 = tri[j], tri[(j+1) % 3]
+            edge = min(pt0, pt1), max(pt0, pt1)
+            if edge not in edges_dict:
+                edges_dict[edge] = []
+            edges_dict[edge].append(i)
+            if len(edges_dict[edge]) == 2:
+                edges_dict[edge] = np.array(edges_dict[edge])
+    return edges_dict
+
+
+def mesh_tri_neighbors_array(mesh):
+    edges_dict = mesh_edges_dict(mesh)
+    neighbs_list = []
+    for i in range(len(mesh.tris)):
+        neighbs_list.append([])
+    for tri_pair in edges_dict.values():
+        tri0, tri1 = tri_pair
+        neighbs_list[tri0].append(tri1)
+        neighbs_list[tri1].append(tri0)
+    return np.array(neighbs_list)
 
 
 def clamp_to_tangent_space(a, b, c):
@@ -504,7 +536,7 @@ def gradient_descent(
         *,
         normalize_func=lambda x: x,
         iteration_count=100,
-        memory=5,
+        memory=10,
         grad_tolerance=1e-5,
         ):
     x = initial_state.copy()
@@ -742,7 +774,7 @@ def cartogram(mesh,
                 tris)
             M_array = np.array([1/2 * np.linalg.det(G) for G in G_array])
             if np.min(M_array) < TOLERANCE: # topology is violated
-                print("inf")
+                print("cost inf")
                 return ValueGrad(value=np.inf, grad=np.zeros_like(verts))
             tri_region_areas = M_array[:, np.newaxis] * portions
             region_areas = np.sum(tri_region_areas, axis=0)
