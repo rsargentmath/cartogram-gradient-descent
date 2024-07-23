@@ -473,16 +473,18 @@ def mesh_edges_dict(mesh):
     return edges_dict
 
 
-def mesh_tri_neighbors_array(mesh):
+def mesh_tri_neighbors_list(mesh):
     edges_dict = mesh_edges_dict(mesh)
     neighbs_list = []
-    for i in range(len(mesh.tris)):
+    for i in range(mesh.tris.shape[0]):
         neighbs_list.append([])
     for tri_pair in edges_dict.values():
+        if len(tri_pair) == 1:
+            continue    # edge is on interruption, so borders only one tri
         tri0, tri1 = tri_pair
         neighbs_list[tri0].append(tri1)
         neighbs_list[tri1].append(tri0)
-    return np.array(neighbs_list)
+    return neighbs_list
 
 
 def clamp_to_tangent_space(a, b, c):
@@ -597,6 +599,8 @@ def gradient_descent(
         
         x = x_new
         cost_grad = cost_grad_new
+        #if learn_rate < 1e-8:
+        #    return x
     return x
 
 
@@ -737,6 +741,34 @@ def area_portions_array(mesh, borders_data_flat):
     return np.apply_along_axis(tri_area_portions, 1, mesh.tris)
 
 
+def tri_scales_blurred(mesh,
+                       portions,
+                       region_scales_intended,
+                       num_blurs=256):
+    neighbs = mesh_tri_neighbors_list(mesh)
+    land_portions = np.sum(portions, axis=1)
+    is_water = land_portions < TOLERANCE
+    tri_scales_list = []
+    for i in range(mesh.tris.shape[0]):
+        if is_water[i]:
+            tri_scales_list.append(1)
+        else:
+            scale_avg = (np.sum(portions[i] * region_scales_intended)
+                         / land_portions[i])
+            tri_scales_list.append(scale_avg)
+    tri_scales = np.array(tri_scales_list)
+    for i in range(num_blurs):
+        tri_scales_new = tri_scales.copy()
+        for j, neighb_ixs in enumerate(neighbs):
+            if not is_water[j]:
+                continue
+            ixs_list = [j] + neighb_ixs
+            vicinity_scales = np.array([tri_scales[k] for k in ixs_list])
+            tri_scales_new[j] = np.mean(vicinity_scales)
+        tri_scales = tri_scales_new
+    return tri_scales
+
+
 def cartogram(mesh,
               portions,
               pop_array,
@@ -756,8 +788,28 @@ def cartogram(mesh,
     region_areas_intended = pop_array / world_pop_density
     region_scales_intended = region_areas_intended / region_areas_og
     land_portions = np.sum(portions, axis=1)
-    tri_scales_intended = (np.sum(portions * region_scales_intended, axis=1)
-                           + 1 - land_portions)
+    tri_scales_intended = tri_scales_blurred(mesh,
+                                             portions,
+                                             region_scales_intended)
+    """
+    set_up_plot(3, 1.5)
+    for i, tri in enumerate(mesh.tris):
+        a, b, c = initial_verts[tri]
+        if a.shape[0] == 3:
+            if np.cross(b-a, c-a)[2] <= 0:
+                continue
+        a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
+        xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
+        scale = tri_scales_intended[i]
+        if scale >= 1:
+            color_num = 1 - 1/scale**0.2
+            color = rgb2hex((0, color_num, 0))
+        else:
+            color_num = 1 - scale**0.2
+            color = rgb2hex((color_num, 0, 0))
+        plt.fill(xs, ys, color)
+    return
+    """
     print(np.min(region_scales_intended), np.max(region_scales_intended))
     print(list(WORLD_BORDERS_DATA_FLAT.keys())[np.argmin(region_scales_intended)],
           list(WORLD_BORDERS_DATA_FLAT.keys())[np.argmax(region_scales_intended)])
@@ -792,6 +844,8 @@ def cartogram(mesh,
                                                                     G0, G)
                 cost_dist = M0 * (F/D - 2)
                 cost_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
+                #cost_area = M0 * (D/A + A/D - 2)
+                #cost_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
                 cost_area = M0 * np.log(D/A)**2
                 cost_area_grad = M0 * 2 * np.log(D/A) * D_grad / D
                 cost_error_grad = (2 * M0
@@ -823,20 +877,10 @@ def cartogram(mesh,
         verts_new = initial_verts.copy()
     else:
         verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
-    
-    weights_dist = 0.05 * (0.1 + 0.9 * land_portions)
-    weights_area = 0.01 * (0.1 + 0.9 * land_portions)
-    weight_error = 1
-    verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
-                                                      weights_area,
-                                                      weight_error),
-                                 verts_new,
-                                 iteration_count=max_iterations,
-                                 normalize_func=normalize_func,
-                                 grad_tolerance=1e-2)
 
-    weights_dist = 0.0005 * (0.1 + 0.9 * land_portions)
-    weights_area = 0.0001 * (0.1 + 0.9 * land_portions)
+    contains_land = np.where(land_portions < TOLERANCE, 0, 1)
+    weights_dist = 0.05 * (0.1 + 0.9 * contains_land)
+    weights_area = 0.02 * (0.1 + 0.9 * contains_land)
     weight_error = 1
     verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
                                                       weights_area,
@@ -845,7 +889,18 @@ def cartogram(mesh,
                                  iteration_count=max_iterations,
                                  normalize_func=normalize_func,
                                  grad_tolerance=1e-2)
-    
+    #"""
+    weights_dist = 0.0005 * (0.1 + 0.9 * contains_land)
+    weights_area = 0.0002 * (0.1 + 0.9 * contains_land)
+    weight_error = 1
+    verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
+                                                      weights_area,
+                                                      weight_error),
+                                 verts_new,
+                                 iteration_count=max_iterations,
+                                 normalize_func=normalize_func,
+                                 grad_tolerance=1e-2)
+    #"""
     set_up_plot(3, 1.5)
     for i, tri in enumerate(mesh.tris):
         a, b, c = verts_new[tri]
