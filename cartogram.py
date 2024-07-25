@@ -558,6 +558,8 @@ def gradient_descent(
     learn_rate = 1
     cost_grad = cost_grad_func(x)
     for i in range(iteration_count):
+        if i % 100 == 0:
+            print(f"iter {i} cost {cost_grad.value:.5f} grad {norm_flat(cost_grad.grad):.5f}")
         g = cost_grad.grad
         if (np.abs(g) < grad_tolerance).all():
             return x
@@ -582,9 +584,9 @@ def gradient_descent(
                                            normalize_func=normalize_func)
         g_new = cost_grad_new.grad
 
-        print(f"descent dot {descent_dot:.5f}")
+        #print(f"descent dot {descent_dot:.5f}")
         descent_dot = dot_nzd_flat(g, x_new - x)
-        print(f"actual descent dot {descent_dot:.5f}")
+        #print(f"actual descent dot {descent_dot:.5f}")
         
         s.append(x_new - x)
         y.append(g_new - g)
@@ -614,7 +616,7 @@ def line_search(cost_grad_func,
                 normalize_func=lambda x: x,
                 tau=0.5,
                 c=0.1):
-    print("START LINE SEARCH")
+    #print("START LINE SEARCH")
     learn_rate = initial_learn_rate
     step_new = learn_rate * (learn_rate * search_dir
                              + (1 - learn_rate) * search_dir_local)
@@ -629,13 +631,13 @@ def line_search(cost_grad_func,
                      < grad_inc_threshold * norm_flat(initial_cost_grad.grad)))
     
     if is_okay(cost_grad_new, step_new): # starting step is small enough
-        print(f"{learn_rate} is small enough")
+        #print(f"{learn_rate} is small enough")
         learn_rate_alt = learn_rate / tau   # make the step bigger
         if learn_rate_alt <= 1:
             learn_rate = learn_rate_alt
         return state_new, cost_grad_new, learn_rate
     # starting step is too big
-    print(f"{learn_rate} is too big")
+    #print(f"{learn_rate} is too big")
     while True:
         learn_rate *= tau   # make the step smaller
         step_new = learn_rate * (learn_rate * search_dir
@@ -643,7 +645,7 @@ def line_search(cost_grad_func,
         state_new = normalize_func(state + step_new)
         cost_grad_new = cost_grad_func(state_new)
         if is_okay(cost_grad_new, step_new):  # step is now small enough
-            print(f"{learn_rate} is small enough")
+            #print(f"{learn_rate} is small enough")
             return state_new, cost_grad_new, learn_rate
 
 
@@ -769,114 +771,174 @@ def tri_scales_blurred(mesh,
     return tri_scales
 
 
+def matrix_basis_vecs_to_tri_veczd(verts, tris, clamp_to_sphere=False):
+    num_tris = tris.shape[0]
+    a = verts[tris[:, 0]].T
+    b = verts[tris[:, 1]].T
+    c = verts[tris[:, 2]].T
+    if a.shape[0] == 2:
+        tan_space_mats = np.array([np.identity(2)] * num_tris)
+        mats_basis_vecs_to_tri = np.array([b-a, c-a]).transpose(1, 0, 2)
+        return tan_space_mats, mats_basis_vecs_to_tri
+    if a.shape[0] == 3:
+        # MISSING ON-SPHERE LINE
+        assert (norm_veczd(cross_veczd(b-a, c-a)) > TOLERANCE).all()
+        t = nzd_veczd(b - a)
+        n = nzd_veczd(cross_veczd(b-a, c-a))
+        # MISSING ON-SPHERE LINE
+        s = cross_veczd(n, t)
+        tan_space_mats = np.array([t, s, n]).transpose(1, 0, 2)
+        tan_space_invs = tan_space_mats.transpose(1, 0, 2)
+        mats_basis_vecs_to_tri = mul_veczd(tan_space_invs[0:2],
+                                    np.array([b-a, c-a]).transpose(1, 0, 2))
+        return tan_space_mats, mats_basis_vecs_to_tri
+    raise ValueError
+
+
+def norm_veczd(vecs):
+    return np.sqrt(np.sum(vecs * vecs, axis=0))
+
+
+def nzd_veczd(vecs):
+    return vecs / norm_veczd(vecs)
+
+
+def cross_veczd(vecs0, vecs1):
+    if vecs0.shape[0] == 2 and vecs1.shape[0] == 2:
+        return vecs0[0] * vecs1[1] - vecs0[1] * vecs1[0]
+    elif vecs0.shape[0] == 3 and vecs1.shape[0] == 3:
+        return np.array([vecs0[1] * vecs1[2] - vecs0[2] * vecs1[1],
+                         vecs0[2] * vecs1[0] - vecs0[0] * vecs1[2],
+                         vecs0[0] * vecs1[1] - vecs0[1] * vecs1[0]])
+    raise ValueError
+
+
+def det_2d_veczd(mats):
+    return mats[0, 0] * mats[1, 1] - mats[0, 1] * mats[1, 0]
+
+
+def inv_2d_veczd(mats):
+    return np.array([[mats[1, 1], -mats[0, 1]],
+                     [-mats[1, 0], mats[0, 0]]]) / det_2d_veczd(mats)
+
+
+def mul_veczd(mats0, mats1):
+    if len(mats0.shape) == 2:
+        m0 = mats0[np.newaxis].transpose(2, 0, 1)
+    elif len(mats0.shape) == 3:
+        m0 = mats0.transpose(2, 0, 1)
+    else:
+        raise ValueError
+    if len(mats1.shape) == 2:
+        m1 = mats1[:, np.newaxis].transpose(2, 0, 1)
+    elif len(mats1.shape) == 3:
+        m1 = mats1.transpose(2, 0, 1)
+    else:
+        raise ValueError
+    m2 = (m0 @ m1).transpose(1, 2, 0)
+    if len(mats0.shape) == 2 and len(mats1.shape) == 3:
+        m2 = m2[0]
+    elif len(mats0.shape) == 3 and len(mats1.shape) == 2:
+        m2 = m2[:, 0]
+    elif len(mats0.shape) == 2 and len(mats1.shape) == 2:
+        m2 = m2[0, 0]
+    return m2
+
+
+def tri_det_frob_value_grads_veczd(G0, G):
+    num_tris = G.shape[-1]
+    G0inv = inv_2d_veczd(G0)
+    G_grad = np.array([[[[-1, -1], [0, 0]], [[0, 0], [-1, -1]]],
+                       [[[1, 0], [0, 0]], [[0, 0], [1, 0]]],
+                       [[[0, 1], [0, 0]], [[0, 0], [0, 1]]]])[..., np.newaxis]
+    E = mul_veczd(G, G0inv)
+    E_grad = np.empty((3, 2, 2, 2, num_tris))
+    for i in range(3):
+        for j in range(2):
+            E_grad[i, j] = mul_veczd(G_grad[i, j], G0inv)
+    D = det_2d_veczd(E)
+    F = np.sum(E * E, axis=(0, 1))
+    D_grad = (E_grad[:, :, 0, 0] * E[1, 1]
+              + E[0, 0] * E_grad[:, :, 1, 1]
+              - E_grad[:, :, 0, 1] * E[1, 0]
+              - E[0, 1] * E_grad[:, :, 1, 0])
+    F_grad = 2 * (E[0, 0] * E_grad[:, :, 0, 0]
+                  + E[0, 1] * E_grad[:, :, 0, 1]
+                  + E[1, 0] * E_grad[:, :, 1, 0]
+                  + E[1, 1] * E_grad[:, :, 1, 1])
+    det_value_grad = ValueGrad(value=D, grad=D_grad)
+    frob_value_grad = ValueGrad(value=F, grad=F_grad)
+    return det_value_grad, frob_value_grad
+
+
 def cartogram(mesh,
               portions,
               pop_array,
               max_iterations,
               clamp_to_sphere,
               initial_verts=None):
-    verts_og, tris = mesh.verts, mesh.tris
-    G0_array = np.apply_along_axis(
-        lambda tri: matrix_basis_vecs_to_tri(*verts_og[tri], False),
-        1,
-        tris)
-    M0_array = np.array([1/2 * np.linalg.det(G0) for G0 in G0_array])
-    tri_region_areas_og = M0_array[:, np.newaxis] * portions
+    G0 = matrix_basis_vecs_to_tri_veczd(mesh.verts, mesh.tris)[1]
+    M0 = 1/2 * det_2d_veczd(G0)
+    tri_region_areas_og = M0[:, np.newaxis] * portions
             # absolute area of each region falling in each tri
     region_areas_og = np.sum(tri_region_areas_og, axis=0)
     world_pop_density = np.sum(pop_array) / np.sum(region_areas_og)
     region_areas_intended = pop_array / world_pop_density
     region_scales_intended = region_areas_intended / region_areas_og
     land_portions = np.sum(portions, axis=1)
-    tri_scales_intended = tri_scales_blurred(mesh,
-                                             portions,
-                                             region_scales_intended)
-    """
-    set_up_plot(3, 1.5)
-    for i, tri in enumerate(mesh.tris):
-        a, b, c = initial_verts[tri]
-        if a.shape[0] == 3:
-            if np.cross(b-a, c-a)[2] <= 0:
-                continue
-        a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
-        xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
-        scale = tri_scales_intended[i]
-        if scale >= 1:
-            color_num = 1 - 1/scale**0.2
-            color = rgb2hex((0, color_num, 0))
-        else:
-            color_num = 1 - scale**0.2
-            color = rgb2hex((color_num, 0, 0))
-        plt.fill(xs, ys, color)
-    return
-    """
-    print(np.min(region_scales_intended), np.max(region_scales_intended))
-    print(list(WORLD_BORDERS_DATA_FLAT.keys())[np.argmin(region_scales_intended)],
-          list(WORLD_BORDERS_DATA_FLAT.keys())[np.argmax(region_scales_intended)])
+    A = tri_scales_blurred(mesh, portions, region_scales_intended)
 
     def cost_grad_func_maker(weights_dist, weights_area, weight_error):
 
         def cost_grad_func(verts):
-            cost = 0
-            cost_grad = np.zeros_like(verts)
-            G_array = np.apply_along_axis(
-                lambda tri: matrix_basis_vecs_to_tri(*verts[tri],
-                                                     clamp_to_sphere),
-                1,
-                tris)
-            M_array = np.array([1/2 * np.linalg.det(G) for G in G_array])
-            if np.min(M_array) < TOLERANCE: # topology is violated
-                print("cost inf")
+            tan_space_mats, G = matrix_basis_vecs_to_tri_veczd(verts,
+                                                               mesh.tris)
+            M = 1/2 * det_2d_veczd(G)
+            if (M < TOLERANCE).any():
+                #print("cost inf")
                 return ValueGrad(value=np.inf, grad=np.zeros_like(verts))
-            tri_region_areas = M_array[:, np.newaxis] * portions
+            tri_region_areas = M[:, np.newaxis] * portions
             region_areas = np.sum(tri_region_areas, axis=0)
             region_errors = region_areas - region_areas_intended
             cost_error = np.sum(region_errors * region_errors)
-            cost += weight_error * cost_error
-            for i, tri in enumerate(tris):
-                G0 = G0_array[i]
-                M0 = M0_array[i]
-                G = G_array[i]
-                A = tri_scales_intended[i]
-                tan_space_mat = tangent_space_matrix(*verts[tri],
-                                                     clamp_to_sphere)
-                (D, D_grad), (F, F_grad) = tri_det_frob_value_grads(*verts[tri],
-                                                                    G0, G)
-                cost_dist = M0 * (F/D - 2)
-                cost_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
-                #cost_area = M0 * (D/A + A/D - 2)
-                #cost_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
-                cost_area = M0 * np.log(D/A)**2
-                cost_area_grad = M0 * 2 * np.log(D/A) * D_grad / D
-                cost_error_grad = (2 * M0
-                                   * np.sum(portions[i] * region_errors)
-                                   * D_grad)
-
-                cost += (weights_dist[i] * cost_dist
-                         + weights_area[i] * cost_area)
-                
-                tri_cost_grad = (weights_dist[i] * cost_dist_grad
-                                 + weights_area[i] * cost_area_grad
-                                 + weight_error * cost_error_grad)
-                tri_cost_grad_global_coords = matrix_times_array_of_vectors(
-                                                       tan_space_mat[:, 0:2],
-                                                       tri_cost_grad)
-                for j in range(3):
-                    cost_grad[tri[j]] += tri_cost_grad_global_coords[j]
-            print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
+            (D, D_grad), (F, F_grad) = tri_det_frob_value_grads_veczd(G0, G)
+            costs_dist = M0 * (F/D - 2)
+            costs_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
+            #cost_area = M0 * (D/A + A/D - 2)
+            #cost_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
+            costs_area = M0 * np.log(D/A)**2
+            costs_area_grad = M0 * 2 * np.log(D/A) * D_grad / D
+            cost_error_grad = (2 * M0
+                               * np.sum(portions.T
+                                        * region_errors[:, np.newaxis], axis=0)
+                               * D_grad)
+            cost = (np.sum(weights_dist * costs_dist)
+                    + np.sum(weights_area * costs_area)
+                    + weight_error * cost_error)
+            tri_cost_grads = (weights_dist * costs_dist_grad
+                              + weights_area * costs_area_grad
+                              + weight_error * cost_error_grad)
+            """tri_cost_grads_global_coords = (
+                tan_space_mats.transpose(2, 0, 1)
+                @ tri_cost_grads.transpose(0, 1, 3, 2)
+            ).transpose(0, 1, 3, 2)"""
+            tri_cost_grads_global_coords = tri_cost_grads
+            cost_grad = np.zeros_like(verts)
+            for i in range(3):
+                for j in range(verts.shape[-1]):
+                    cost_grad[:, j] += np.histogram(
+                        mesh.tris[:, i],
+                        bins=np.arange(verts.shape[0] + 1),
+                        weights=tri_cost_grads_global_coords[i, j, :]
+                    )[0]
+            #print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
             return ValueGrad(cost, cost_grad)
 
         return cost_grad_func
 
-    def normalize_func(verts):
-        if clamp_to_sphere:
-            return np.apply_along_axis(nzd, 1, verts)
-        return verts
-
-    if initial_verts is not None:
-        verts_new = initial_verts.copy()
-    else:
-        verts_new = matrix_times_array_of_vectors(np.diag((1,1,1)), verts_og)
+    # MISSING ON-SPHERE LINE
+    # MISSING ON-SPHERE LINE
+    verts_new = initial_verts.copy()
 
     contains_land = np.where(land_portions < TOLERANCE, 0, 1)
     weights_dist = 0.05 * (0.1 + 0.9 * contains_land)
@@ -887,8 +949,8 @@ def cartogram(mesh,
                                                       weight_error),
                                  verts_new,
                                  iteration_count=max_iterations,
-                                 normalize_func=normalize_func,
-                                 grad_tolerance=1e-2)
+                                 #normalize_func=normalize_func,
+                                 grad_tolerance=1e-1)
     #"""
     weights_dist = 0.0005 * (0.1 + 0.9 * contains_land)
     weights_area = 0.0002 * (0.1 + 0.9 * contains_land)
@@ -898,8 +960,8 @@ def cartogram(mesh,
                                                       weight_error),
                                  verts_new,
                                  iteration_count=max_iterations,
-                                 normalize_func=normalize_func,
-                                 grad_tolerance=1e-2)
+                                 #normalize_func=normalize_func,
+                                 grad_tolerance=1e-5)
     #"""
     set_up_plot(3, 1.5)
     for i, tri in enumerate(mesh.tris):
@@ -911,8 +973,8 @@ def cartogram(mesh,
         xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
         color = rgb2hex((0, np.clip(land_portions[i], 0, 1), 0))
         plt.fill(xs, ys, color)
-    plot_mesh(Mesh(verts=verts_new, tris=tris))
-    return Mesh(verts=verts_new, tris=tris)
+    plot_mesh(Mesh(verts=verts_new, tris=mesh.tris))
+    return Mesh(verts=verts_new, tris=mesh.tris)
 
 
 def octahedron_equal_area(it_count):
