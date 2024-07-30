@@ -402,7 +402,7 @@ def subdivide_mesh_sphere(mesh, n):
     return Mesh(verts=verts_final, tris=tris_final)
 
 
-def subdivide_octahedron_interrupted(n, shift_degrees=0):
+def subdivide_octahedron_interrupted(n, shift_degrees=0, return_boundary=True):
     mesh = OCTAHEDRON
     # Subdivide each mesh triangle. Store new vertices and triangles.
     verts_og, tris_og = mesh.verts, mesh.tris
@@ -451,11 +451,19 @@ def subdivide_octahedron_interrupted(n, shift_degrees=0):
     old_ixs_to_final = new_ixs_to_final[old_ixs_to_new]
     tris_final = old_ixs_to_final[tris]
 
+    if return_boundary:
+        boundary = np.logical_and(np.abs(verts_final[:, 1]) < TOLERANCE,
+                                  verts_final[:, 0] < TOLERANCE)
+
     shift = np.deg2rad(shift_degrees)
     shift_mat = np.array([[np.cos(shift), -np.sin(shift), 0],
                           [np.sin(shift), np.cos(shift), 0],
                           [0, 0, 1]])
     verts_final = matrix_times_array_of_vectors(shift_mat, verts_final)
+    if return_boundary:
+        return (Mesh(verts=verts_final, tris=tris_final),
+                verts_proj_final,
+                boundary)
     return Mesh(verts=verts_final, tris=tris_final), verts_proj_final
 
 
@@ -876,7 +884,8 @@ def cartogram(mesh,
               pop_array,
               max_iterations,
               clamp_to_sphere,
-              initial_verts=None):
+              initial_verts=None,
+              boundary=None):
     G0 = matrix_basis_vecs_to_tri_veczd(mesh.verts, mesh.tris)[1]
     M0 = 1/2 * det_2d_veczd(G0)
     tri_region_areas_og = M0[:, np.newaxis] * portions
@@ -886,11 +895,67 @@ def cartogram(mesh,
     region_areas_intended = pop_array / world_pop_density
     region_scales_intended = region_areas_intended / region_areas_og
     land_portions = np.sum(portions, axis=1)
-    A = tri_scales_blurred(mesh, portions, region_scales_intended)
+    A = tri_scales_blurred(mesh,
+                           portions,
+                           region_scales_intended,
+                           num_blurs=256)
+    if boundary is not None:
+        quad0 = np.logical_and(boundary, np.logical_and(
+                               initial_verts[:, 0] > TOLERANCE,
+                               initial_verts[:, 1] > TOLERANCE))
+        quad1 = np.logical_and(boundary, np.logical_and(
+                               initial_verts[:, 0] < -TOLERANCE,
+                               initial_verts[:, 1] > TOLERANCE))
+        quad2 = np.logical_and(boundary, np.logical_and(
+                               initial_verts[:, 0] < -TOLERANCE,
+                               initial_verts[:, 1] < -TOLERANCE))
+        quad3 = np.logical_and(boundary, np.logical_and(
+                               initial_verts[:, 0] > TOLERANCE,
+                               initial_verts[:, 1] < -TOLERANCE))
+        pole0 = np.logical_and(boundary, np.logical_and(
+                               np.abs(initial_verts[:, 0]) < TOLERANCE,
+                               initial_verts[:, 1] > 0))
+        pole1 = np.logical_and(boundary, np.logical_and(
+                               np.abs(initial_verts[:, 0]) < TOLERANCE,
+                               initial_verts[:, 1] < 0))
+        pole0_ix = np.argmax(pole0)
+        pole1_ix = np.argmax(pole1)
 
-    def cost_grad_func_maker(weights_dist, weights_area, weight_error):
+    def cost_grad_func_maker(weights_dist,
+                             weights_area,
+                             weight_boundary,
+                             weight_error):
 
         def cost_grad_func(verts):
+            if boundary is not None:
+                diffs_pole0 = verts[:, 0] - verts[pole0_ix, 0]
+                diffs_pole1 = verts[:, 0] - verts[pole1_ix, 0]
+                diffs_quad0 = np.where(quad0, diffs_pole0, np.inf)
+                diffs_quad1 = np.where(quad1, -diffs_pole0, np.inf)
+                diffs_quad2 = np.where(quad2, -diffs_pole1, np.inf)
+                diffs_quad3 = np.where(quad3, diffs_pole1, np.inf)
+                cost_boundary = 0
+                cost_boundary_grad = np.zeros_like(verts)
+                for diffs in [diffs_quad0, diffs_quad1,
+                              diffs_quad2, diffs_quad3]:
+                    if (diffs < TOLERANCE).any():
+                        return ValueGrad(value=np.inf,
+                                         grad=np.zeros_like(verts))
+                    cost_boundary += np.sum(1 / diffs)
+                cost_boundary_grad[:, 0] += -1 / (diffs_quad0 * diffs_quad0)
+                cost_boundary_grad[:, 0] += 1 / (diffs_quad1 * diffs_quad1)
+                cost_boundary_grad[:, 0] += 1 / (diffs_quad2 * diffs_quad2)
+                cost_boundary_grad[:, 0] += -1 / (diffs_quad3 * diffs_quad3)
+                cost_boundary_grad[pole0_ix, 0] = np.sum(
+                        1 / (diffs_quad0 * diffs_quad0)
+                        - 1 / (diffs_quad1 * diffs_quad1))
+                cost_boundary_grad[pole1_ix, 0] = np.sum(
+                        -1 / (diffs_quad2 * diffs_quad2)
+                        + 1 / (diffs_quad3 * diffs_quad3))
+                num_boundary_points = np.sum(np.where(boundary, 1, 0))
+                cost_boundary /= num_boundary_points
+                cost_boundary_grad /= num_boundary_points
+                
             tan_space_mats, G = matrix_basis_vecs_to_tri_veczd(verts,
                                                                mesh.tris)
             M = 1/2 * det_2d_veczd(G)
@@ -904,10 +969,10 @@ def cartogram(mesh,
             (D, D_grad), (F, F_grad) = tri_det_frob_value_grads_veczd(G0, G)
             costs_dist = M0 * (F/D - 2)
             costs_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
-            #cost_area = M0 * (D/A + A/D - 2)
-            #cost_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
-            costs_area = M0 * np.log(D/A)**2
-            costs_area_grad = M0 * 2 * np.log(D/A) * D_grad / D
+            costs_area = M0 * (D/A + A/D - 2)
+            costs_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
+            #costs_area = M0 * np.log(D/A)**2
+            #costs_area_grad = M0 * 2 * np.log(D/A) * D_grad / D
             cost_error_grad = (2 * M0
                                * np.sum(portions.T
                                         * region_errors[:, np.newaxis], axis=0)
@@ -931,6 +996,9 @@ def cartogram(mesh,
                         bins=np.arange(verts.shape[0] + 1),
                         weights=tri_cost_grads_global_coords[i, j, :]
                     )[0]
+            if boundary is not None:
+                cost += weight_boundary * cost_boundary
+                cost_grad += weight_boundary * cost_boundary_grad
             #print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
             return ValueGrad(cost, cost_grad)
 
@@ -940,28 +1008,34 @@ def cartogram(mesh,
     # MISSING ON-SPHERE LINE
     verts_new = initial_verts.copy()
 
-    contains_land = np.where(land_portions < TOLERANCE, 0, 1)
-    weights_dist = 0.05 * (0.1 + 0.9 * contains_land)
-    weights_area = 0.02 * (0.1 + 0.9 * contains_land)
+    is_water = land_portions < TOLERANCE
+    weights_water = np.where(is_water, 0.1, 1)
+    #weights_pop = np.where(is_water, 1, 1 + 0.5 * A)
+    weights_dist = 0.05 * weights_water
+    weights_area = 0.02 * weights_water
+    weight_boundary = 1e-6
     weight_error = 1
     verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
                                                       weights_area,
+                                                      weight_boundary,
                                                       weight_error),
                                  verts_new,
                                  iteration_count=max_iterations,
                                  #normalize_func=normalize_func,
                                  grad_tolerance=1e-1)
     #"""
-    weights_dist = 0.0005 * (0.1 + 0.9 * contains_land)
-    weights_area = 0.0002 * (0.1 + 0.9 * contains_land)
+    weights_dist = 0.0005 * weights_water
+    weights_area = 0.0002 * weights_water
+    weight_boundary = 1e-8
     weight_error = 1
     verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
                                                       weights_area,
+                                                      weight_boundary,
                                                       weight_error),
                                  verts_new,
                                  iteration_count=max_iterations,
                                  #normalize_func=normalize_func,
-                                 grad_tolerance=1e-5)
+                                 grad_tolerance=3e-5)
     #"""
     set_up_plot(3, 1.5)
     for i, tri in enumerate(mesh.tris):
