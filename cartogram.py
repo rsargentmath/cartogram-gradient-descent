@@ -623,6 +623,7 @@ def line_search(cost_grad_func,
 
     def is_okay(cost_grad, step):
         grad_inc_threshold = 5
+        print(f"change {cost_grad.value - initial_cost_grad.value:.8f} expected {dot_flat(initial_cost_grad.grad, step):.8f}")
         return ((cost_grad.value - initial_cost_grad.value
                  <= c * dot_flat(initial_cost_grad.grad, step) + TOLERANCE)
                 and (norm_flat(cost_grad.grad)
@@ -861,8 +862,44 @@ def cartogram(mesh,
                 tri_cost_grad_global_coords = matrix_times_array_of_vectors(
                                                        tan_space_mat[:, 0:2],
                                                        tri_cost_grad)
+
+                a, b, c = verts[tri]
+                a_grad = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
+                b_grad = np.array([[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
+                c_grad = np.array([[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
+                d = a + b + c
+                d_grad = a_grad + b_grad + c_grad
+                tri_cost_grad_sphere = np.empty((3, 3))
+                def tan_space_grad(v, v_grad_jk, d_grad_jk):
+                    return (v_grad_jk
+                            - ((v_grad_jk @ d + v @ d_grad_jk) * d
+                               + (v @ d) * d_grad_jk) / (d @ d)
+                            + 2 * (v @ d) * (d @ d_grad_jk) * d / (d @ d)**2)
                 for j in range(3):
-                    cost_grad[tri[j]] += tri_cost_grad_global_coords[j]
+                    for k in range(3):
+                        at_grad_jk = tan_space_grad(a,
+                                                       a_grad[j, k],
+                                                       d_grad[j, k])
+                        bt_grad_jk = tan_space_grad(b,
+                                                       b_grad[j, k],
+                                                       d_grad[j, k])
+                        ct_grad_jk = tan_space_grad(c,
+                                                       c_grad[j, k],
+                                                       d_grad[j, k])
+                        tri_cost_grad_sphere[j, k] = np.sum(
+                            tri_cost_grad_global_coords * np.array([
+                                at_grad_jk, bt_grad_jk, ct_grad_jk]))
+                
+                for j in range(3):
+                    cost_grad[tri[j]] += tri_cost_grad_sphere[j]
+            for i, v in enumerate(verts):
+                cost_grad[i] -= (cost_grad[i] @ v) * v
             print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
             return ValueGrad(cost, cost_grad)
 
