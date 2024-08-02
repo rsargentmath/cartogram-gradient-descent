@@ -779,7 +779,7 @@ def tri_scales_blurred(mesh,
     return tri_scales
 
 
-def matrix_basis_vecs_to_tri_veczd(verts, tris, clamp_to_sphere=False):
+def matrix_basis_vecs_to_tri_veczd(verts, tris):
     num_tris = tris.shape[0]
     a = verts[tris[:, 0]].T
     b = verts[tris[:, 1]].T
@@ -789,11 +789,9 @@ def matrix_basis_vecs_to_tri_veczd(verts, tris, clamp_to_sphere=False):
         mats_basis_vecs_to_tri = np.array([b-a, c-a]).transpose(1, 0, 2)
         return tan_space_mats, mats_basis_vecs_to_tri
     if a.shape[0] == 3:
-        # MISSING ON-SPHERE LINE
         assert (norm_veczd(cross_veczd(b-a, c-a)) > TOLERANCE).all()
         t = nzd_veczd(b - a)
         n = nzd_veczd(cross_veczd(b-a, c-a))
-        # MISSING ON-SPHERE LINE
         s = cross_veczd(n, t)
         tan_space_mats = np.array([t, s, n]).transpose(1, 0, 2)
         tan_space_invs = tan_space_mats.transpose(1, 0, 2)
@@ -801,6 +799,31 @@ def matrix_basis_vecs_to_tri_veczd(verts, tris, clamp_to_sphere=False):
                                     np.array([b-a, c-a]).transpose(1, 0, 2))
         return tan_space_mats, mats_basis_vecs_to_tri
     raise ValueError
+
+
+def matrix_basis_vecs_to_tri_sphere_veczd(verts, tris):
+    num_tris = tris.shape[0]
+    a0 = verts[tris[:, 0]].T
+    b0 = verts[tris[:, 1]].T
+    c0 = verts[tris[:, 2]].T
+    if a0.shape[0] != 3:
+        raise ValueError
+    centers = nzd_veczd((a0 + b0 + c0) / 3)
+    a = a0 - dot_veczd(a0, centers) * centers
+    b = b0 - dot_veczd(b0, centers) * centers
+    c = c0 - dot_veczd(c0, centers) * centers
+    t = nzd_veczd(b - a)
+    n = centers
+    s = cross_veczd(n, t)
+    tan_space_mats = np.array([t, s, n]).transpose(1, 0, 2)
+    tan_space_invs = tan_space_mats.transpose(1, 0, 2)
+    mats_basis_vecs_to_tri = mul_veczd(tan_space_invs[0:2],
+                                np.array([b-a, c-a]).transpose(1, 0, 2))
+    return tan_space_mats, mats_basis_vecs_to_tri
+
+
+def dot_veczd(vecs0, vecs1):
+    return np.sum(vecs0 * vecs1, axis=0)
 
 
 def norm_veczd(vecs):
@@ -883,7 +906,7 @@ def cartogram(mesh,
               portions,
               pop_array,
               max_iterations,
-              clamp_to_sphere,
+              sphere_first=False,
               initial_verts=None,
               boundary=None):
     G0 = matrix_basis_vecs_to_tri_veczd(mesh.verts, mesh.tris)[1]
@@ -899,7 +922,7 @@ def cartogram(mesh,
                            portions,
                            region_scales_intended,
                            num_blurs=256)
-    if boundary is not None:
+    if boundary is not None and not sphere_first:
         quad0 = np.logical_and(boundary, np.logical_and(
                                initial_verts[:, 0] > TOLERANCE,
                                initial_verts[:, 1] > TOLERANCE))
@@ -927,7 +950,7 @@ def cartogram(mesh,
                              weight_error):
 
         def cost_grad_func(verts):
-            if boundary is not None:
+            if boundary is not None and not sphere_first:
                 diffs_pole0 = verts[:, 0] - verts[pole0_ix, 0]
                 diffs_pole1 = verts[:, 0] - verts[pole1_ix, 0]
                 diffs_quad0 = np.where(quad0, diffs_pole0, np.inf)
@@ -955,9 +978,13 @@ def cartogram(mesh,
                 num_boundary_points = np.sum(np.where(boundary, 1, 0))
                 cost_boundary /= num_boundary_points
                 cost_boundary_grad /= num_boundary_points
-                
-            tan_space_mats, G = matrix_basis_vecs_to_tri_veczd(verts,
-                                                               mesh.tris)
+
+            if sphere_first:
+                tan_space_mats, G = matrix_basis_vecs_to_tri_sphere_veczd(
+                    verts, mesh.tris)
+            else:
+                tan_space_mats, G = matrix_basis_vecs_to_tri_veczd(
+                    verts, mesh.tris)
             M = 1/2 * det_2d_veczd(G)
             if (M < TOLERANCE).any():
                 #print("cost inf")
@@ -971,8 +998,6 @@ def cartogram(mesh,
             costs_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
             costs_area = M0 * (D/A + A/D - 2)
             costs_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
-            #costs_area = M0 * np.log(D/A)**2
-            #costs_area_grad = M0 * 2 * np.log(D/A) * D_grad / D
             cost_error_grad = (2 * M0
                                * np.sum(portions.T
                                         * region_errors[:, np.newaxis], axis=0)
@@ -980,33 +1005,89 @@ def cartogram(mesh,
             cost = (np.sum(weights_dist * costs_dist)
                     + np.sum(weights_area * costs_area)
                     + weight_error * cost_error)
-            tri_cost_grads = (weights_dist * costs_dist_grad
-                              + weights_area * costs_area_grad
-                              + weight_error * cost_error_grad)
-            """tri_cost_grads_global_coords = (
-                tan_space_mats.transpose(2, 0, 1)
-                @ tri_cost_grads.transpose(0, 1, 3, 2)
-            ).transpose(0, 1, 3, 2)"""
-            tri_cost_grads_global_coords = tri_cost_grads
+            tri_cost_grads_tan_space = (weights_dist * costs_dist_grad
+                                        + weights_area * costs_area_grad
+                                        + weight_error * cost_error_grad)
+            if not sphere_first:
+                tri_cost_grads = tri_cost_grads_tan_space
+            else:
+                tcg_tan_space_global_coords = (
+                    tan_space_mats.transpose(2, 0, 1)[:, np.newaxis, :, 0:2]
+                    @ tri_cost_grads_tan_space.transpose(
+                        2, 0, 1)[..., np.newaxis]
+                    )[..., 0].transpose(1, 2, 0)
+                a = verts[mesh.tris[:, 0]].T
+                b = verts[mesh.tris[:, 1]].T
+                c = verts[mesh.tris[:, 2]].T
+                a_grad = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]]]
+                                  )[..., np.newaxis]
+                b_grad = np.array([[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]]]
+                                  )[..., np.newaxis]
+                c_grad = np.array([[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                                   [[1, 0, 0], [0, 1, 0], [0, 0, 1]]]
+                                  )[..., np.newaxis]
+                d = a + b + c
+                d_grad = a_grad + b_grad + c_grad
+                tri_cost_grads = np.empty((3, 3, mesh.tris.shape[0]))
+                def tan_space_grad(v, v_grad_jk, d_grad_jk):
+                    return (v_grad_jk
+                            - ((dot_veczd(v_grad_jk, d)
+                                + dot_veczd(v, d_grad_jk)) * d
+                               + dot_veczd(v, d) * d_grad_jk)
+                            / dot_veczd(d, d)
+                            + 2 * dot_veczd(v, d)
+                            * dot_veczd(d, d_grad_jk) * d
+                            / dot_veczd(d, d)**2)
+                for j in range(3):
+                    for k in range(3):
+                        at_grad_jk = tan_space_grad(a,
+                                                    a_grad[j, k],
+                                                    d_grad[j, k])
+                        bt_grad_jk = tan_space_grad(b,
+                                                    b_grad[j, k],
+                                                    d_grad[j, k])
+                        ct_grad_jk = tan_space_grad(c,
+                                                    c_grad[j, k],
+                                                    d_grad[j, k])
+                        tri_cost_grads[j, k] = np.sum(
+                            tcg_tan_space_global_coords * np.array([
+                                at_grad_jk, bt_grad_jk, ct_grad_jk]),
+                            axis=(0, 1))
+                
             cost_grad = np.zeros_like(verts)
             for i in range(3):
                 for j in range(verts.shape[-1]):
                     cost_grad[:, j] += np.histogram(
                         mesh.tris[:, i],
                         bins=np.arange(verts.shape[0] + 1),
-                        weights=tri_cost_grads_global_coords[i, j, :]
+                        weights=tri_cost_grads[i, j, :]
                     )[0]
-            if boundary is not None:
+            if boundary is not None and not sphere_first:
                 cost += weight_boundary * cost_boundary
                 cost_grad += weight_boundary * cost_boundary_grad
+            if sphere_first:
+                cost_grad -= (dot_veczd(cost_grad.T, verts.T) * verts.T).T
             #print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
             return ValueGrad(cost, cost_grad)
 
         return cost_grad_func
 
-    # MISSING ON-SPHERE LINE
-    # MISSING ON-SPHERE LINE
-    verts_new = initial_verts.copy()
+    def normalize_func(verts):
+        if sphere_first:
+            return nzd_veczd(verts.T).T
+        return verts
+    
+    if initial_verts is not None:
+        verts_new = initial_verts.copy()
+    elif sphere_first:
+        verts_new = mesh.verts.copy()
+    else:
+        raise ValueError
 
     is_water = land_portions < TOLERANCE
     weights_water = np.where(is_water, 0.1, 1)
@@ -1021,7 +1102,7 @@ def cartogram(mesh,
                                                       weight_error),
                                  verts_new,
                                  iteration_count=max_iterations,
-                                 #normalize_func=normalize_func,
+                                 normalize_func=normalize_func,
                                  grad_tolerance=1e-1)
     #"""
     weights_dist = 0.0005 * weights_water
@@ -1034,10 +1115,13 @@ def cartogram(mesh,
                                                       weight_error),
                                  verts_new,
                                  iteration_count=max_iterations,
-                                 #normalize_func=normalize_func,
+                                 normalize_func=normalize_func,
                                  grad_tolerance=3e-5)
     #"""
-    set_up_plot(3, 1.5)
+    if sphere_first:
+        set_up_plot(1.02, 1.02)
+    else:
+        set_up_plot(3.5, 2)
     for i, tri in enumerate(mesh.tris):
         a, b, c = verts_new[tri]
         if a.shape[0] == 3:
