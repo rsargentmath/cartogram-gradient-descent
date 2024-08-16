@@ -206,6 +206,23 @@ def line_intersection_plane(a0, a1, b0, b1, infinite_a=False, infinite_b=False):
     return point
 
 
+def line_intersection_sphere(a0, a1, b0, b1, infinite_b=False):
+    assert a0.shape[0] == 3
+    point_cross = np.cross(np.cross(a0, a1), np.cross(b0, b1))
+    if (np.abs(point_cross) < TOLERANCE).all():     # if close to parallel
+        return None
+    point = nzd(point_cross)
+    a_mid = nzd(a0 + a1)
+    b_mid = nzd(b0 + b1)
+    point *= np.sign(a_mid @ point)
+    if vec_norm(point - a_mid) > vec_norm(a0 - a_mid) + TOLERANCE:
+        return None
+    if not infinite_b:
+        if vec_norm(point - b_mid) > vec_norm(b0 - b_mid) + TOLERANCE:
+            return None
+    return point
+
+
 def gnomonic_projection(v):
     assert v.shape == (3,)
     assert v[2] > TOLERANCE
@@ -707,7 +724,84 @@ def point_old_mesh_to_new(v, verts_old, verts_new, tris):
     for tri in tris:
         if is_point_inside_tri(v, *verts_old[tri]):
             v_plane = point_to_tri_plane(v, *verts_old[tri])
-            return point_old_tri_to_new(v, *verts_old[tri], *verts_new[tri])
+            return point_old_tri_to_new(v_plane,
+                                        *verts_old[tri],
+                                        *verts_new[tri])
+
+
+def mesh_box_dict(mesh, resolution):
+    a = mesh.verts[mesh.tris[:, 0]].T
+    b = mesh.verts[mesh.tris[:, 1]].T
+    c = mesh.verts[mesh.tris[:, 2]].T
+    assert a.shape[0] == 3
+    eps = np.max(np.array([dot_veczd(b-a, b-a),
+                           dot_veczd(c-b, c-b),
+                           dot_veczd(a-c, a-c)]), axis=0)
+    box_min = np.min(np.array([a, b, c]), axis=0) - eps
+    box_max = np.max(np.array([a, b, c]), axis=0) + eps
+    box_ix_min = np.floor(box_min / resolution).astype(int)
+    box_ix_max = np.ceil(box_max / resolution).astype(int)
+    box_dict = {}
+    for i in range(a.shape[1]):
+        for jx in range(box_ix_min[0, i], box_ix_max[0, i]):
+            for jy in range(box_ix_min[1, i], box_ix_max[1, i]):
+                for jz in range(box_ix_min[2, i], box_ix_max[2, i]):
+                    if (jx, jy, jz) not in box_dict:
+                        box_dict[(jx, jy, jz)] = []
+                    box_dict[(jx, jy, jz)].append(i)
+    return box_dict
+
+
+def polys_old_mesh_to_new(polys, mesh_old, mesh_new):
+    assert mesh_old.verts.shape[0] == mesh_new.verts.shape[0]
+    assert mesh_old.tris.shape[0] == mesh_new.tris.shape[0]
+    resolution = 0.01
+    box_dict = mesh_box_dict(mesh_old, resolution)
+    polys_new = []
+    for verts in polys:
+        verts_new = []
+        for v in verts:
+            v_ix = np.floor(v / resolution).astype(int)
+            v_box_tris = box_dict[(v_ix[0], v_ix[1], v_ix[2])]
+            v_tris = mesh_old.tris[v_box_tris]
+            for tri in v_tris:
+                if is_point_inside_tri(v, *mesh_old.verts[tri]):
+                    v_plane = point_to_tri_plane(v, *mesh_old.verts[tri])
+                    verts_new.append(point_old_tri_to_new(v_plane,
+                                                          *mesh_old.verts[tri],
+                                                          *mesh_new.verts[tri]))
+                    break
+            else:   # no tri containing v is found
+                raise Exception
+        polys_new.append(np.array(verts_new))
+    return polys_new
+
+
+def interrupt_polygon_sphere(polygon, is_closed, b0, b1, infinite_b=False):
+    output_list = [[]]
+    is_interrupted = False
+    poly = list(polygon)
+    if is_closed:
+        poly.append(poly[0])
+    for i in range(len(poly) - 1):
+        v0 = poly[i]
+        v1 = poly[i + 1]
+        p = line_intersection_sphere(v0, v1, b0, b1, infinite_b)
+        if p is None:
+            output_list[-1].append(v0)
+        else:
+            is_interrupted = True
+            p0 = nzd(p + 0.001 * (v0 - p))
+            p1 = nzd(p + 0.001 * (v1 - p))
+            output_list[-1] += [v0, p0]
+            output_list.append([p1])
+    if not is_closed:
+        output_list[-1].append(poly[-1])
+    elif is_interrupted:
+        start = output_list.pop(0)
+        output_list[-1] += start
+    is_closed_new = len(output_list) * [is_closed and not is_interrupted]
+    return output_list, is_closed_new
 
 
 def tri_det_frob_value_grads(a, b, c, G0, G):
