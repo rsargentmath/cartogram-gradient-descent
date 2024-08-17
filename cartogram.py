@@ -801,7 +801,58 @@ def interrupt_polygon_sphere(polygon, is_closed, b0, b1, infinite_b=False):
         start = output_list.pop(0)
         output_list[-1] += start
     is_closed_new = len(output_list) * [is_closed and not is_interrupted]
+    for i in range(len(output_list)):
+        output_list[i] = np.array(output_list[i])
     return output_list, is_closed_new
+
+
+def interrupt_polygon_list(poly_list, is_closed_list,
+                           b0, b1, infinite_b=False):
+    assert len(poly_list) == len(is_closed_list)
+    poly_list_new = []
+    is_closed_list_new = []
+    for i, poly in enumerate(poly_list):
+        polys_new, is_closed_new = interrupt_polygon_sphere(poly,
+                                        is_closed_list[i],
+                                        b0, b1, infinite_b)
+        poly_list_new += polys_new
+        is_closed_list_new += is_closed_new
+    return poly_list_new, is_closed_list_new
+
+
+def interrupt_polygon_list_antimeridian(poly_list, is_closed_list):
+    poly_list_new, is_closed_list_new = interrupt_polygon_list(poly_list,
+                                                is_closed_list,
+                                                np.array([0, 0, 1]),
+                                                np.array([-1, 0, 0]))
+    poly_list_new, is_closed_list_new = interrupt_polygon_list(poly_list_new,
+                                                is_closed_list_new,
+                                                np.array([-1, 0, 0]),
+                                                np.array([0, 0, -1]))
+    return poly_list_new, is_closed_list_new
+
+
+def clip_polygon_list_hemisphere(poly_list, is_closed_list):
+    poly_list_new, is_closed_list_new = interrupt_polygon_list(poly_list,
+                                                is_closed_list,
+                                                np.array([1, 0, 0]),
+                                                np.array([0, 1, 0]),
+                                                infinite_b=True)
+    poly_list_clipped = []
+    is_closed_list_clipped = []
+    for i, poly in enumerate(poly_list_new):
+        if np.max(poly[:, 2]) > 0:
+            poly_list_clipped.append(poly)
+            is_closed_list_clipped.append(is_closed_list_new[i])
+    return poly_list_clipped, is_closed_list_clipped
+
+
+def poly_list_from_borders(borders_data_flat):
+    poly_list = []
+    for polys in borders_data_flat.values():
+        poly_list += [lonlat_to_cartes(poly.T).T for poly in polys]
+    is_closed_list = len(poly_list) * [True]
+    return poly_list, is_closed_list
 
 
 def tri_det_frob_value_grads(a, b, c, G0, G):
@@ -1365,6 +1416,17 @@ def plot_mesh(mesh):
         a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
         xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
         plt.plot(xs, ys, c="b", linewidth=0.2)
+
+
+def plot_polygons(poly_list, is_closed_list):
+    for i, poly in enumerate(poly_list):
+        poly_draw = poly[:, 0:2]
+        if is_closed_list[i]:
+            poly_draw = list(poly_draw)
+            poly_draw.append(poly_draw[0])
+            poly_draw = np.array(poly_draw)
+        xs, ys = poly_draw.T
+        plt.plot(xs, ys, c="y", linewidth=0.2)
 
 
 def main():
