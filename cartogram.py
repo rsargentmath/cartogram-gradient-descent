@@ -336,6 +336,19 @@ def hammer_projection(lonlat):
     return np.array([x, y])
 
 
+def equal_earth(lonlat):
+    lon, lat = lonlat
+    th = np.arcsin(np.sqrt(3)/2 * np.sin(lat))
+    a1 = 1.340264
+    a2 = -0.081106
+    a3 = 0.000893
+    a4 = 0.003796
+    x = (2 * lon * np.cos(th)
+         / (np.sqrt(3) * (9*a4 * th**8 + 7*a3 * th**6 + 3*a2 * th**2 + a1)))
+    y = a4 * th**9 + a3 * th**7 + a2 * th**3 + a1 * th
+    return np.array([x, y])
+
+
 def tri_area_plane(a, b, c):
     if a.shape[0] == 2:
         return 1/2 * np.cross(b-a, c-a)
@@ -767,9 +780,12 @@ def polys_old_mesh_to_new(polys, mesh_old, mesh_new):
             for tri in v_tris:
                 if is_point_inside_tri(v, *mesh_old.verts[tri]):
                     v_plane = point_to_tri_plane(v, *mesh_old.verts[tri])
-                    verts_new.append(point_old_tri_to_new(v_plane,
-                                                          *mesh_old.verts[tri],
-                                                          *mesh_new.verts[tri]))
+                    v_new = point_old_tri_to_new(v_plane,
+                                                 *mesh_old.verts[tri],
+                                                 *mesh_new.verts[tri])
+                    if v_new.shape[0] == 3:
+                        v_new = nzd(v_new)
+                    verts_new.append(v_new)
                     break
             else:   # no tri containing v is found
                 raise Exception
@@ -820,14 +836,18 @@ def interrupt_polygon_list(poly_list, is_closed_list,
     return poly_list_new, is_closed_list_new
 
 
-def interrupt_polygon_list_antimeridian(poly_list, is_closed_list):
+def interrupt_polygon_list_antimeridian(poly_list,
+                                        is_closed_list,
+                                        shift_degrees=0):
+    ang = np.deg2rad(shift_degrees)
+    interrupt_point = np.array([-np.cos(ang), -np.sin(ang), 0])
     poly_list_new, is_closed_list_new = interrupt_polygon_list(poly_list,
                                                 is_closed_list,
                                                 np.array([0, 0, 1]),
-                                                np.array([-1, 0, 0]))
+                                                interrupt_point)
     poly_list_new, is_closed_list_new = interrupt_polygon_list(poly_list_new,
                                                 is_closed_list_new,
-                                                np.array([-1, 0, 0]),
+                                                interrupt_point,
                                                 np.array([0, 0, -1]))
     return poly_list_new, is_closed_list_new
 
@@ -1267,17 +1287,15 @@ def cartogram(mesh,
         set_up_plot(1.02, 1.02)
     else:
         set_up_plot(3.5, 2)
-    for i, tri in enumerate(mesh.tris):
-        a, b, c = verts_new[tri]
-        if a.shape[0] == 3:
-            if np.cross(b-a, c-a)[2] <= 0:
-                continue
-        a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
-        xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
-        color = rgb2hex((0, np.clip(land_portions[i], 0, 1), 0))
-        plt.fill(xs, ys, color)
-    plot_mesh(Mesh(verts=verts_new, tris=mesh.tris))
-    return Mesh(verts=verts_new, tris=mesh.tris)
+    mesh_final = Mesh(verts=verts_new, tris=mesh.tris)
+    plot_mesh(mesh_final, np.clip(land_portions, 0, 1))
+    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+    poly_list, is_closed_list = interrupt_polygon_list_antimeridian(poly_list,
+                                                            is_closed_list,
+                                                            shift_degrees=11)
+    poly_list_proj = polys_old_mesh_to_new(poly_list, mesh, mesh_final)
+    plot_polygons(poly_list_proj, is_closed_list)
+    return mesh_final
 
 
 def octahedron_equal_area(it_count):
@@ -1407,14 +1425,19 @@ def set_up_plot(xlim=1.02, ylim=1.02, y_offset=0):
     plt.show()
 
 
-def plot_mesh(mesh):
-    for tri in mesh.tris:
+def plot_mesh(mesh, tri_vals=None):
+    if tri_vals is not None:
+        assert mesh.tris.shape[0] == tri_vals.shape[0]
+    for i, tri in enumerate(mesh.tris):
         a, b, c = mesh.verts[tri]
         if a.shape[0] == 3:
             if np.cross(b-a, c-a)[2] <= 0:
                 continue
         a2d, b2d, c2d = a[0:2], b[0:2], c[0:2]
         xs, ys = np.column_stack([a2d, b2d, c2d, a2d])
+        if tri_vals is not None:
+            color = rgb2hex((0, tri_vals[i], 0))
+            plt.fill(xs, ys, color)
         plt.plot(xs, ys, c="b", linewidth=0.2)
 
 
@@ -1426,7 +1449,7 @@ def plot_polygons(poly_list, is_closed_list):
             poly_draw.append(poly_draw[0])
             poly_draw = np.array(poly_draw)
         xs, ys = poly_draw.T
-        plt.plot(xs, ys, c="y", linewidth=0.2)
+        plt.plot(xs, ys, c="m", linewidth=0.5)
 
 
 def main():
