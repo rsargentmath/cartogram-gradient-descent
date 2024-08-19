@@ -1156,7 +1156,7 @@ def cartogram(mesh,
                 return ValueGrad(value=np.inf, grad=np.zeros_like(verts))
             tri_region_areas = M[:, np.newaxis] * portions
             region_areas = np.sum(tri_region_areas, axis=0)
-            region_errors = region_areas - region_areas_intended
+            region_errors = (region_areas - region_areas_intended) / np.sqrt(region_areas_intended)
             cost_error = np.sum(region_errors * region_errors)
             (D, D_grad), (F, F_grad) = tri_det_frob_value_grads_veczd(G0, G)
             costs_dist = M0 * (F/D - 2)
@@ -1165,7 +1165,9 @@ def cartogram(mesh,
             costs_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
             cost_error_grad = (2 * M0
                                * np.sum(portions.T
-                                        * region_errors[:, np.newaxis], axis=0)
+                                        * region_errors[:, np.newaxis]
+                                        / np.sqrt(region_areas_intended)[:, np.newaxis],
+                                        axis=0)
                                * D_grad)
             cost = (np.sum(weights_dist * costs_dist)
                     + np.sum(weights_area * costs_area)
