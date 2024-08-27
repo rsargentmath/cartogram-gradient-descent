@@ -6,6 +6,9 @@ from time import perf_counter
 from matplotlib.colors import rgb2hex
 
 
+rng = np.random.default_rng()
+
+
 with open("ne_110m_admin_0_countries_lakes_FIXED.json", "r") as f:
     import_data = json.load(f)
 WORLD_BORDERS_DATA = {}
@@ -322,8 +325,6 @@ def lonlat_to_cartes(lonlat):
 
 def cartes_to_lonlat(v):
     x, y, z = v
-    if abs(x) < TOLERANCE and abs(y) < TOLERANCE:
-        return np.array([0, np.arcsin(z)])
     return np.array([np.arctan2(y, x), np.arcsin(z)])
 
 
@@ -338,15 +339,93 @@ def hammer_projection(lonlat):
 
 def equal_earth(lonlat):
     lon, lat = lonlat
-    th = np.arcsin(np.sqrt(3)/2 * np.sin(lat))
+    t = np.arcsin(np.sqrt(3)/2 * np.sin(lat))
     a1 = 1.340264
     a2 = -0.081106
     a3 = 0.000893
     a4 = 0.003796
-    x = (2 * lon * np.cos(th)
-         / (np.sqrt(3) * (9*a4 * th**8 + 7*a3 * th**6 + 3*a2 * th**2 + a1)))
-    y = a4 * th**9 + a3 * th**7 + a2 * th**3 + a1 * th
+    x = (2 * lon * np.cos(t)
+         / (np.sqrt(3) * (9*a4 * t**8 + 7*a3 * t**6 + 3*a2 * t**2 + a1)))
+    y = a4 * t**9 + a3 * t**7 + a2 * t**3 + a1 * t
     return np.array([x, y])
+
+
+def equal_earth_blurred_jacobian_grad(v, eps):
+    l, x = cartes_to_lonlat(v)
+    """
+    zero = np.zeros(x.shape)
+    return ValueGrad(value=np.array([[1+8*np.cos(x)**2, zero], [zero, np.ones(x.shape)]]),
+                     grad=np.array([np.zeros((2, 2, x.shape[0])),
+                                    np.array([[-16*np.cos(x)*np.sin(x), zero],[zero,zero]])]))
+    
+    t = np.arcsin(np.sqrt(3)/2 * np.sin(x))
+    sx, cx, st, ct = np.sin(x), np.cos(x), np.sin(t), np.cos(t)
+    dtdx = np.sqrt(3)/2 * np.cos(x) / np.cos(t)
+    a1 = 1.340264
+    a2 = -0.081106
+    a3 = 0.000893
+    a4 = 0.003796
+    f = a4 * t**9 + a3 * t**7 + a2 * t**3 + a1 * t
+    fi = 9*a4 * t**8 + 7*a3 * t**6 + 3*a2 * t**2 + a1
+    fii = 72*a4 * t**7 + 42*a3 * t**5 + 6*a2 * t
+    fiii = 504*a4 * t**6 + 210*a3 * t**4 + 6*a2
+    
+    b1 = 1.16070267178
+    b3 = -0.101042503624
+    b5 = -0.00731926421823
+    b7 = -0.00151299991633
+    f = b1 * x + b3 * x**3 + b5 * x**5 + b7 * x**7
+    fp = b1 + 3*b3 * x**2 + 5*b5 * x**4 + 7*b7 * x**6
+    fpp = 6*b3 * x + 20*b5 * x**3 + 42*b7 * x**5
+    fppp = 6*b3 + 60*b5 * x**2 + 210*b7 * x**4
+    
+    """
+    f = x
+    fp = 1 + 0*x
+    fpp = 0*x
+    fppp = 0*x
+    #"""
+    def q(s):
+        return (1 - np.sin(np.pi/2 * np.cos(np.pi * s))) / 2
+    def qp(s):
+        return (np.pi**2 / 4 * np.cos(np.pi/2 * np.cos(np.pi * s))
+                * np.sin(np.pi * s))
+    sx, cx = np.sin(x), np.cos(x)
+    g = (-sx * fp - cx * fpp) / fp**2
+    gp = ((-cx * fp**2 - cx * fppp * fp + 2 * sx * fpp * fp + 2 * cx * fpp**2)
+          / fp**3)
+    l_pos = np.where(l >= 0, l, l + 2*np.pi)
+    k = 2/np.pi * np.arccos(eps / np.pi)
+    eps_sec = eps / np.cos(k * x)
+    on_antimer = np.abs(l) > np.pi - eps_sec
+    on_pole = np.abs(x) > np.pi/2 - eps
+    a = (l_pos - 2 * np.pi * q((l_pos - np.pi) / (2 * eps_sec) + 1/2)) * g
+    zero = np.zeros(x.shape)
+    id2 = np.identity(2)[..., np.newaxis]
+    J1 = np.array([[1 / fp, np.where(on_antimer, a, l * g)],
+                   [zero, fp]])
+    H = np.where(on_pole,
+                 J1 * q((np.pi/2 - np.abs(x)) / eps)
+                 + id2 * (1 - q((np.pi/2 - np.abs(x)) / eps)),
+                 J1)
+    b = (1 - 2 * np.pi
+         * qp((l_pos - np.pi) / (2 * eps_sec) + 1/2)
+         / (2 * eps_sec)) * g
+    c = (np.pi * k
+         * qp((l_pos - np.pi) / (2 * eps_sec) + 1/2)
+         * (l_pos - np.pi) / eps * np.sin(k * x) * g
+         + (l_pos - 2 * np.pi * q((l_pos - np.pi) / (2 * eps_sec) + 1/2)) * gp)
+    dJ1dl = np.array([[zero, np.where(on_antimer, b, g)],
+                      [zero, zero]])
+    dJ1dx = np.array([[-fpp / fp**2, np.where(on_antimer, c, l * gp)],
+                      [zero, fpp]])
+    dHdl = np.where(on_pole, dJ1dl * q((np.pi/2 - np.abs(x)) / eps), dJ1dl)
+    dHdx = np.where(on_pole,
+                    dJ1dx * q((np.pi/2 - np.abs(x)) / eps)
+                    - (J1 - id2) * qp((np.pi/2 - np.abs(x)) / eps)
+                    * np.sign(x) / eps,
+                    dJ1dx)
+    return ValueGrad(value=H, grad=np.array([dHdl / np.cos(x), dHdx]))
 
 
 def tri_area_plane(a, b, c):
@@ -570,7 +649,7 @@ def matrix_basis_vecs_to_tri(a, b, c, clamp_to_sphere=False):
     return tan_space_inv[0:2] @ np.column_stack([b1-a1, c1-a1])
 
 
-def gradient_descent(
+def minimize(
         cost_grad_func, # returns ValueGrad
         initial_state,
         *,
@@ -977,7 +1056,10 @@ def matrix_basis_vecs_to_tri_sphere_veczd(verts, tris):
     a = a0 - dot_veczd(a0, centers) * centers
     b = b0 - dot_veczd(b0, centers) * centers
     c = c0 - dot_veczd(c0, centers) * centers
-    t = nzd_veczd(b - a)
+    east = cross_veczd(np.array([[0], [0], [1]]), centers)
+    t = np.where(norm_veczd(east) > TOLERANCE,
+                 nzd_veczd(east),
+                 np.array([[1], [0], [0]]))
     n = centers
     s = cross_veczd(n, t)
     tan_space_mats = np.array([t, s, n]).transpose(1, 0, 2)
@@ -1041,7 +1123,11 @@ def mul_veczd(mats0, mats1):
     return m2
 
 
-def tri_det_frob_value_grads_veczd(G0, G):
+def tri_det_dist_value_grads_veczd(G0, G, H=None, H_grad=None):
+    # H_grad is of the form [1/cos(lat) * dHdlon, dHdlat]
+    hybrid = H is not None and H_grad is not None
+    if hybrid:
+        H_grad_pts = 1/3 * np.array([H_grad, H_grad, H_grad])
     num_tris = G.shape[-1]
     G0inv = inv_2d_veczd(G0)
     G_grad = np.array([[[[-1, -1], [0, 0]], [[0, 0], [-1, -1]]],
@@ -1053,18 +1139,34 @@ def tri_det_frob_value_grads_veczd(G0, G):
         for j in range(2):
             E_grad[i, j] = mul_veczd(G_grad[i, j], G0inv)
     D = det_2d_veczd(E)
-    F = np.sum(E * E, axis=(0, 1))
     D_grad = (E_grad[:, :, 0, 0] * E[1, 1]
               + E[0, 0] * E_grad[:, :, 1, 1]
               - E_grad[:, :, 0, 1] * E[1, 0]
               - E[0, 1] * E_grad[:, :, 1, 0])
-    F_grad = 2 * (E[0, 0] * E_grad[:, :, 0, 0]
-                  + E[0, 1] * E_grad[:, :, 0, 1]
-                  + E[1, 0] * E_grad[:, :, 1, 0]
-                  + E[1, 1] * E_grad[:, :, 1, 1])
+    if hybrid:
+        E1 = mul_veczd(H, E)
+        E1_grad = np.empty((3, 2, 2, 2, num_tris))
+        for i in range(3):
+            for j in range(2):
+                E1_grad[i, j] = (mul_veczd(H_grad_pts[i, j], E)
+                                 + mul_veczd(H, E_grad[i, j]))
+        D1 = det_2d_veczd(E1)
+        D1_grad = (E1_grad[:, :, 0, 0] * E1[1, 1]
+                  + E1[0, 0] * E1_grad[:, :, 1, 1]
+                  - E1_grad[:, :, 0, 1] * E1[1, 0]
+                  - E1[0, 1] * E1_grad[:, :, 1, 0])
+    else:
+        E1, E1_grad, D1, D1_grad = E, E_grad, D, D_grad
+    F1 = np.sum(E1 * E1, axis=(0, 1))
+    F1_grad = 2 * (E1[0, 0] * E1_grad[:, :, 0, 0]
+                  + E1[0, 1] * E1_grad[:, :, 0, 1]
+                  + E1[1, 0] * E1_grad[:, :, 1, 0]
+                  + E1[1, 1] * E1_grad[:, :, 1, 1])
+    dist = F1/D1 - 2
+    dist_grad = (F1_grad*D1 - F1*D1_grad) / (D1*D1)
     det_value_grad = ValueGrad(value=D, grad=D_grad)
-    frob_value_grad = ValueGrad(value=F, grad=F_grad)
-    return det_value_grad, frob_value_grad
+    dist_value_grad = ValueGrad(value=dist, grad=dist_grad)
+    return det_value_grad, dist_value_grad
 
 
 def cartogram(mesh,
@@ -1072,8 +1174,11 @@ def cartogram(mesh,
               pop_array,
               max_iterations,
               sphere_first=False,
+              hybrid=False,
               initial_verts=None,
               boundary=None):
+    if hybrid and not sphere_first:
+        raise ValueError
     G0 = matrix_basis_vecs_to_tri_veczd(mesh.verts, mesh.tris)[1]
     M0 = 1/2 * det_2d_veczd(G0)
     tri_region_areas_og = M0[:, np.newaxis] * portions
@@ -1156,19 +1261,30 @@ def cartogram(mesh,
                 return ValueGrad(value=np.inf, grad=np.zeros_like(verts))
             tri_region_areas = M[:, np.newaxis] * portions
             region_areas = np.sum(tri_region_areas, axis=0)
-            region_errors = (region_areas - region_areas_intended) / np.sqrt(region_areas_intended)
+            region_errors = ((region_areas - region_areas_intended)
+                             / np.sqrt(region_areas_intended))
             cost_error = np.sum(region_errors * region_errors)
-            (D, D_grad), (F, F_grad) = tri_det_frob_value_grads_veczd(G0, G)
-            costs_dist = M0 * (F/D - 2)
-            costs_dist_grad = M0 * (F_grad*D - F*D_grad) / (D*D)
+            H, H_grad = None, None
+            if hybrid:
+                centers = nzd_veczd(verts[mesh.tris[:, 0]].T
+                                    + verts[mesh.tris[:, 1]].T
+                                    + verts[mesh.tris[:, 2]].T)
+                eps = 8 / np.sqrt(mesh.tris.shape[0])
+                H, H_grad = equal_earth_blurred_jacobian_grad(centers, eps)
+            (D, D_grad), (dist, dist_grad) = tri_det_dist_value_grads_veczd(
+                                                            G0, G, H, H_grad)
+            #if rng.random() < 0.001:
+            #    print(np.histogram(np.log(D), 20))
+            costs_dist = M0 * dist
+            costs_dist_grad = M0 * dist_grad
             costs_area = M0 * (D/A + A/D - 2)
             costs_area_grad = M0 * (D_grad / A - A*D_grad / (D*D))
             cost_error_grad = (2 * M0
-                               * np.sum(portions.T
-                                        * region_errors[:, np.newaxis]
-                                        / np.sqrt(region_areas_intended)[:, np.newaxis],
-                                        axis=0)
-                               * D_grad)
+                           * np.sum(portions.T
+                                * region_errors[:, np.newaxis]
+                                / np.sqrt(region_areas_intended)[:, np.newaxis],
+                                axis=0)
+                           * D_grad)
             cost = (np.sum(weights_dist * costs_dist)
                     + np.sum(weights_area * costs_area)
                     + weight_error * cost_error)
@@ -1200,27 +1316,25 @@ def cartogram(mesh,
                                   )[..., np.newaxis]
                 d = a + b + c
                 d_grad = a_grad + b_grad + c_grad
+                dn = nzd_veczd(d)
                 tri_cost_grads = np.empty((3, 3, mesh.tris.shape[0]))
-                def tan_space_grad(v, v_grad_jk, d_grad_jk):
-                    return (v_grad_jk
-                            - ((dot_veczd(v_grad_jk, d)
-                                + dot_veczd(v, d_grad_jk)) * d
-                               + dot_veczd(v, d) * d_grad_jk)
-                            / dot_veczd(d, d)
-                            + 2 * dot_veczd(v, d)
-                            * dot_veczd(d, d_grad_jk) * d
-                            / dot_veczd(d, d)**2)
                 for j in range(3):
                     for k in range(3):
-                        at_grad_jk = tan_space_grad(a,
-                                                    a_grad[j, k],
-                                                    d_grad[j, k])
-                        bt_grad_jk = tan_space_grad(b,
-                                                    b_grad[j, k],
-                                                    d_grad[j, k])
-                        ct_grad_jk = tan_space_grad(c,
-                                                    c_grad[j, k],
-                                                    d_grad[j, k])
+                        dn_grad_jk = (d_grad[j, k] / norm_veczd(d)
+                                      - d / norm_veczd(d)**3
+                                      * dot_veczd(d, d_grad[j, k]))
+                        at_grad_jk = (a_grad[j, k]
+                                      - (dot_veczd(a_grad[j, k], dn)
+                                         + dot_veczd(a, dn_grad_jk)) * dn
+                                      + (1 - dot_veczd(a, dn)) * dn_grad_jk)
+                        bt_grad_jk = (b_grad[j, k]
+                                      - (dot_veczd(b_grad[j, k], dn)
+                                         + dot_veczd(b, dn_grad_jk)) * dn
+                                      + (1 - dot_veczd(b, dn)) * dn_grad_jk)
+                        ct_grad_jk = (c_grad[j, k]
+                                      - (dot_veczd(c_grad[j, k], dn)
+                                         + dot_veczd(c, dn_grad_jk)) * dn
+                                      + (1 - dot_veczd(c, dn)) * dn_grad_jk)
                         tri_cost_grads[j, k] = np.sum(
                             tcg_tan_space_global_coords * np.array([
                                 at_grad_jk, bt_grad_jk, ct_grad_jk]),
@@ -1263,27 +1377,27 @@ def cartogram(mesh,
     weights_area = 0.02 * weights_water
     weight_boundary = 1e-6
     weight_error = 1
-    verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
-                                                      weights_area,
-                                                      weight_boundary,
-                                                      weight_error),
-                                 verts_new,
-                                 iteration_count=max_iterations,
-                                 normalize_func=normalize_func,
-                                 grad_tolerance=1e-1)
+    verts_new = minimize(cost_grad_func_maker(weights_dist,
+                                              weights_area,
+                                              weight_boundary,
+                                              weight_error),
+                         verts_new,
+                         iteration_count=max_iterations,
+                         normalize_func=normalize_func,
+                         grad_tolerance=1e-1)
     #"""
     weights_dist = 0.0005 * weights_water
     weights_area = 0.0002 * weights_water
     weight_boundary = 1e-8
     weight_error = 1
-    verts_new = gradient_descent(cost_grad_func_maker(weights_dist,
-                                                      weights_area,
-                                                      weight_boundary,
-                                                      weight_error),
-                                 verts_new,
-                                 iteration_count=max_iterations,
-                                 normalize_func=normalize_func,
-                                 grad_tolerance=3e-5)
+    verts_new = minimize(cost_grad_func_maker(weights_dist,
+                                              weights_area,
+                                              weight_boundary,
+                                              weight_error),
+                         verts_new,
+                         iteration_count=max_iterations,
+                         normalize_func=normalize_func,
+                         grad_tolerance=3e-5)
     #"""
     if sphere_first:
         set_up_plot(1.02, 1.02)
@@ -1360,18 +1474,18 @@ def octahedron_equal_area(it_count):
     #initial_state = normalize_func(initial_state)
 
     t0 = perf_counter()
-    verts_new = gradient_descent(cost_grad_func_maker(0.2),
-                                 initial_state,
-                                 iteration_count=it_count,
-                                 #normalize_func=normalize_func)
-                                 grad_tolerance=1e-2,
-                                 )
-    verts_new = gradient_descent(cost_grad_func_maker(0.001),
-                                 initial_state,
-                                 iteration_count=it_count,
-                                 #normalize_func=normalize_func)
-                                 grad_tolerance=1e-5,
-                                 )
+    verts_new = minimize(cost_grad_func_maker(0.2),
+                         initial_state,
+                         iteration_count=it_count,
+                         #normalize_func=normalize_func)
+                         grad_tolerance=1e-2,
+                         )
+    verts_new = minimize(cost_grad_func_maker(0.001),
+                         initial_state,
+                         iteration_count=it_count,
+                         #normalize_func=normalize_func)
+                         grad_tolerance=1e-5,
+                         )
     t1 = perf_counter()
     print(f"{t1 - t0:.2f} seconds")
     
