@@ -352,12 +352,6 @@ def equal_earth(lonlat):
 
 def equal_earth_blurred_jacobian_grad(v, eps):
     l, x = cartes_to_lonlat(v)
-    """
-    zero = np.zeros(x.shape)
-    return ValueGrad(value=np.array([[1+8*np.cos(x)**2, zero], [zero, np.ones(x.shape)]]),
-                     grad=np.array([np.zeros((2, 2, x.shape[0])),
-                                    np.array([[-16*np.cos(x)*np.sin(x), zero],[zero,zero]])]))
-    
     t = np.arcsin(np.sqrt(3)/2 * np.sin(x))
     sx, cx, st, ct = np.sin(x), np.cos(x), np.sin(t), np.cos(t)
     dtdx = np.sqrt(3)/2 * np.cos(x) / np.cos(t)
@@ -369,28 +363,25 @@ def equal_earth_blurred_jacobian_grad(v, eps):
     fi = 9*a4 * t**8 + 7*a3 * t**6 + 3*a2 * t**2 + a1
     fii = 72*a4 * t**7 + 42*a3 * t**5 + 6*a2 * t
     fiii = 504*a4 * t**6 + 210*a3 * t**4 + 6*a2
-    
-    b1 = 1.16070267178
-    b3 = -0.101042503624
-    b5 = -0.00731926421823
-    b7 = -0.00151299991633
-    f = b1 * x + b3 * x**3 + b5 * x**5 + b7 * x**7
-    fp = b1 + 3*b3 * x**2 + 5*b5 * x**4 + 7*b7 * x**6
-    fpp = 6*b3 * x + 20*b5 * x**3 + 42*b7 * x**5
-    fppp = 6*b3 + 60*b5 * x**2 + 210*b7 * x**4
-    
-    """
-    f = x
-    fp = 1 + 0*x
-    fpp = 0*x
-    fppp = 0*x
-    #"""
+    fp = fi * dtdx
+    fpp = (fii * dtdx**2
+           + fi * np.sqrt(3)/2
+             * (-sx * ct + np.sqrt(3)/2 * cx**2 * st/ct) / ct**2)
+    fppp = (fiii * dtdx**3
+            + fii
+              * (3/2 * (-cx * sx * ct + cx**2 * st * dtdx) / ct**3
+                 + dtdx * np.sqrt(3)/2
+                   * (-sx * ct + np.sqrt(3)/2 * cx**2 * st/ct) / ct**2)
+            + fi * np.sqrt(3)/2
+              * ((-cx * ct + sx * st * dtdx - np.sqrt(3) * cx * sx * st/ct
+                  + cx**2 / ct**2 * np.sqrt(3)/2 * dtdx) * ct
+                 + (-sx * ct + np.sqrt(3)/2 * cx**2 * st/ct) * 2 * st * dtdx)
+              / ct**3)
     def q(s):
         return (1 - np.sin(np.pi/2 * np.cos(np.pi * s))) / 2
     def qp(s):
         return (np.pi**2 / 4 * np.cos(np.pi/2 * np.cos(np.pi * s))
                 * np.sin(np.pi * s))
-    sx, cx = np.sin(x), np.cos(x)
     g = (-sx * fp - cx * fpp) / fp**2
     gp = ((-cx * fp**2 - cx * fppp * fp + 2 * sx * fpp * fp + 2 * cx * fpp**2)
           / fp**3)
