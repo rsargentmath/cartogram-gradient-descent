@@ -337,21 +337,7 @@ def hammer_projection(lonlat):
     return np.array([x, y])
 
 
-def equal_earth(lonlat):
-    lon, lat = lonlat
-    t = np.arcsin(np.sqrt(3)/2 * np.sin(lat))
-    a1 = 1.340264
-    a2 = -0.081106
-    a3 = 0.000893
-    a4 = 0.003796
-    x = (2 * lon * np.cos(t)
-         / (np.sqrt(3) * (9*a4 * t**8 + 7*a3 * t**6 + 3*a2 * t**2 + a1)))
-    y = a4 * t**9 + a3 * t**7 + a2 * t**3 + a1 * t
-    return np.array([x, y])
-
-
-def equal_earth_blurred_jacobian_grad(v, eps):
-    l, x = cartes_to_lonlat(v)
+def equal_earth_derivs(x):
     t = np.arcsin(np.sqrt(3)/2 * np.sin(x))
     sx, cx, st, ct = np.sin(x), np.cos(x), np.sin(t), np.cos(t)
     dtdx = np.sqrt(3)/2 * np.cos(x) / np.cos(t)
@@ -377,11 +363,28 @@ def equal_earth_blurred_jacobian_grad(v, eps):
                   + cx**2 / ct**2 * np.sqrt(3)/2 * dtdx) * ct
                  + (-sx * ct + np.sqrt(3)/2 * cx**2 * st/ct) * 2 * st * dtdx)
               / ct**3)
+    return f, fp, fpp, fppp
+
+
+def sinusoidal_derivs(x):
+    return x, 1 + 0*x, 0*x, 0*x
+
+
+def pseudocylindrical(derivs_func, lonlat):
+    l, x = lonlat
+    f, fp, _, _ = derivs_func(x)
+    return np.array([l * np.cos(x) / fp, f])
+
+
+def pseudocyl_blurred_jacobian_grad(derivs_func, v, eps):
+    l, x = cartes_to_lonlat(v)
+    f, fp, fpp, fppp = derivs_func(x)
     def q(s):
         return (1 - np.sin(np.pi/2 * np.cos(np.pi * s))) / 2
     def qp(s):
         return (np.pi**2 / 4 * np.cos(np.pi/2 * np.cos(np.pi * s))
                 * np.sin(np.pi * s))
+    sx, cx = np.sin(x), np.cos(x)
     g = (-sx * fp - cx * fpp) / fp**2
     gp = ((-cx * fp**2 - cx * fppp * fp + 2 * sx * fpp * fp + 2 * cx * fpp**2)
           / fp**3)
@@ -1261,7 +1264,8 @@ def cartogram(mesh,
                                     + verts[mesh.tris[:, 1]].T
                                     + verts[mesh.tris[:, 2]].T)
                 eps = 8 / np.sqrt(mesh.tris.shape[0])
-                H, H_grad = equal_earth_blurred_jacobian_grad(centers, eps)
+                H, H_grad = pseudocyl_blurred_jacobian_grad(equal_earth_derivs,
+                                                            centers, eps)
             (D, D_grad), (dist, dist_grad) = tri_det_dist_value_grads_veczd(
                                                             G0, G, H, H_grad)
             #if rng.random() < 0.001:
