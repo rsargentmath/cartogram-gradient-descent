@@ -395,6 +395,7 @@ def pseudocyl_blurred_jacobian_grad(derivs_func, v, eps):
     on_pole = np.abs(x) > np.pi/2 - eps
     a = (l_pos - 2 * np.pi * q((l_pos - np.pi) / (2 * eps_sec) + 1/2)) * g
     zero = np.zeros(x.shape)
+    one = np.ones(x.shape)
     id2 = np.identity(2)[..., np.newaxis]
     J1 = np.array([[1 / fp, np.where(on_antimer, a, l * g)],
                    [zero, fp]])
@@ -419,7 +420,18 @@ def pseudocyl_blurred_jacobian_grad(derivs_func, v, eps):
                     - (J1 - id2) * qp((np.pi/2 - np.abs(x)) / eps)
                     * np.sign(x) / eps,
                     dJ1dx)
-    return ValueGrad(value=H, grad=np.array([dHdl / np.cos(x), dHdx]))
+    # "tspx" is x in the tangent space, "x" is phi (latitude). Sorry
+    dHdtspx = (dHdl / np.cos(x)
+               + np.tan(x) * mul_veczd(H, np.array([[zero, one],
+                                                    [-one, zero]])))
+
+    is_pole = np.abs(x) > np.pi/2 - TOLERANCE
+    if is_pole.any():
+        H = np.where(is_pole, np.array([[one, zero], [zero, one]]), H)
+        dHdtspx = np.where(is_pole, np.array([[zero, zero], [zero, zero]]),
+                           dHdtspx)
+        dHdx = np.where(is_pole, np.array([[zero, zero], [zero, zero]]), dHdx)
+    return ValueGrad(value=H, grad=np.array([dHdtspx, dHdx]))
 
 
 def tri_area_plane(a, b, c):
