@@ -370,6 +370,25 @@ def sinusoidal_derivs(x):
     return x, 1 + 0*x, 0*x, 0*x
 
 
+def mollweide_derivs(x):
+    a1 = 1.11039784780
+    a3 = -0.0662943858992
+    a5 = -0.0207086475913
+    a7 = 0.0312619523127
+    a9 = -0.0261916651107
+    a11 = 0.0102240520704
+    a13 = -0.00156787281335
+    f = (a1 * x + a3 * x**3 + a5 * x**5 + a7 * x**7 + a9 * x**9
+         + a11 * x**11 + a13 * x**13)
+    fp = (a1 + 3*a3 * x**2 + 5*a5 * x**4 + 7*a7 * x**6 + 9*a9 * x**8
+          + 11*a11 * x**10 + 13*a13 * x**12)
+    fpp = (6*a3 * x + 20*a5 * x**3 + 42*a7 * x**5 + 72*a9 * x**7
+           + 110*a11 * x**9 + 156*a13 * x**11)
+    fppp = (6*a3 + 60*a5 * x**2 + 210*a7 * x**4 + 504*a9 * x**6
+            + 990*a11 * x**8 + 1716*a13 * x**10)
+    return f, fp, fpp, fppp
+
+
 def pseudocylindrical(derivs_func, lonlat):
     l, x = lonlat
     f, fp, _, _ = derivs_func(x)
@@ -678,7 +697,6 @@ def minimize(
                 - rho[k-1] * s[k-1] * dot_flat(y[k-1], H_prev_yps_g)
                 + rho[k-1] * s[k-1] * dot_flat(s[k-1], g))
 
-    learn_rate = 1
     cost_grad = cost_grad_func(x)
     for i in range(iteration_count):
         if i % 100 == 0:
@@ -698,17 +716,16 @@ def minimize(
             search_dir_local = -H_0_scale * g
             descent_dot = dot_nzd_flat(g, search_dir)
         
-        x_new, cost_grad_new, learn_rate = line_search(cost_grad_func,
+        x_new, cost_grad_new = line_search(cost_grad_func,
                                            x,
                                            cost_grad,
                                            search_dir,
                                            search_dir_local,
-                                           learn_rate,
                                            normalize_func=normalize_func)
         g_new = cost_grad_new.grad
 
         #print(f"descent dot {descent_dot:.5f}")
-        descent_dot = dot_nzd_flat(g, x_new - x)
+        #descent_dot = dot_nzd_flat(g, x_new - x)
         #print(f"actual descent dot {descent_dot:.5f}")
         
         s.append(x_new - x)
@@ -734,13 +751,12 @@ def line_search(cost_grad_func,
                 initial_cost_grad,
                 search_dir,
                 search_dir_local,
-                initial_learn_rate,
                 *,
                 normalize_func=lambda x: x,
                 tau=0.5,
                 c=0.1):
     #print("START LINE SEARCH")
-    learn_rate = initial_learn_rate
+    learn_rate = 1
     step_new = learn_rate * (learn_rate * search_dir
                              + (1 - learn_rate) * search_dir_local)
     state_new = normalize_func(state + step_new)
@@ -755,10 +771,7 @@ def line_search(cost_grad_func,
     
     if is_okay(cost_grad_new, step_new): # starting step is small enough
         #print(f"{learn_rate} is small enough")
-        learn_rate_alt = learn_rate / tau   # make the step bigger
-        if learn_rate_alt <= 1:
-            learn_rate = learn_rate_alt
-        return state_new, cost_grad_new, learn_rate
+        return state_new, cost_grad_new
     # starting step is too big
     #print(f"{learn_rate} is too big")
     while True:
@@ -769,7 +782,7 @@ def line_search(cost_grad_func,
         cost_grad_new = cost_grad_func(state_new)
         if is_okay(cost_grad_new, step_new):  # step is now small enough
             #print(f"{learn_rate} is small enough")
-            return state_new, cost_grad_new, learn_rate
+            return state_new, cost_grad_new
 
 
 def clamp_inside_half_space(v, clamp_vec, min_dot):
@@ -1179,8 +1192,10 @@ def cartogram(mesh,
               portions,
               pop_array,
               max_iterations,
+              *,
               sphere_first=False,
               hybrid=False,
+              proj_derivs=equal_earth_derivs,
               initial_verts=None,
               boundary=None):
     if hybrid and not sphere_first:
@@ -1276,7 +1291,7 @@ def cartogram(mesh,
                                     + verts[mesh.tris[:, 1]].T
                                     + verts[mesh.tris[:, 2]].T)
                 eps = 8 / np.sqrt(mesh.tris.shape[0])
-                H, H_grad = pseudocyl_blurred_jacobian_grad(equal_earth_derivs,
+                H, H_grad = pseudocyl_blurred_jacobian_grad(proj_derivs,
                                                             centers, eps)
             (D, D_grad), (dist, dist_grad) = tri_det_dist_value_grads_veczd(
                                                             G0, G, H, H_grad)
@@ -1379,10 +1394,10 @@ def cartogram(mesh,
 
     is_water = land_portions < TOLERANCE
     weights_water = np.where(is_water, 0.1, 1)
-    #weights_pop = np.where(is_water, 1, 1 + 0.5 * A)
-    weights_dist = 0.05 * weights_water
-    weights_area = 0.02 * weights_water
-    weight_boundary = 1e-6
+    weights_pop = 0.2 + 0.8 * A
+    weights_dist = 0.05 * weights_water * weights_pop
+    weights_area = 0.02 * weights_water * weights_pop
+    weight_boundary = 1e-7
     weight_error = 1
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
@@ -1393,9 +1408,9 @@ def cartogram(mesh,
                          normalize_func=normalize_func,
                          grad_tolerance=1e-1)
     #"""
-    weights_dist = 0.0005 * weights_water
-    weights_area = 0.0002 * weights_water
-    weight_boundary = 1e-8
+    weights_dist = 0.0005 * weights_water * weights_pop
+    weights_area = 0.0002 * weights_water * weights_pop
+    weight_boundary = 1e-9
     weight_error = 1
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
