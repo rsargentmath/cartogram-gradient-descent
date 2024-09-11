@@ -1195,10 +1195,11 @@ def cartogram(mesh,
               *,
               sphere_first=False,
               hybrid=False,
+              fix_antimer=False,
               proj_derivs=equal_earth_derivs,
               initial_verts=None,
               boundary=None):
-    if hybrid and not sphere_first:
+    if (hybrid or fix_antimer) and not sphere_first:
         raise ValueError
     G0 = matrix_basis_vecs_to_tri_veczd(mesh.verts, mesh.tris)[1]
     M0 = 1/2 * det_2d_veczd(G0)
@@ -1238,6 +1239,7 @@ def cartogram(mesh,
     def cost_grad_func_maker(weights_dist,
                              weights_area,
                              weight_boundary,
+                             weights_antimer,
                              weight_error):
 
         def cost_grad_func(verts):
@@ -1269,6 +1271,15 @@ def cartogram(mesh,
                 num_boundary_points = np.sum(np.where(boundary, 1, 0))
                 cost_boundary /= num_boundary_points
                 cost_boundary_grad /= num_boundary_points
+            if fix_antimer:
+                diffs_antimer = np.where(antimer,
+                                         (verts - mesh.verts)[:, 1], 0)
+                diffs_pole = np.where(north_pole,
+                                      (verts - mesh.verts)[:, 0], 0)
+                costs_antimer = diffs_antimer**2 + diffs_pole**2
+                cost_antimer_grad = 2 * np.array([diffs_pole,
+                                                  diffs_antimer,
+                                                  0 * diffs_antimer])
 
             if sphere_first:
                 tan_space_mats, G = matrix_basis_vecs_to_tri_sphere_veczd(
@@ -1373,6 +1384,9 @@ def cartogram(mesh,
             if boundary is not None and not sphere_first:
                 cost += weight_boundary * cost_boundary
                 cost_grad += weight_boundary * cost_boundary_grad
+            if fix_antimer:
+                cost += np.sum(weights_antimer * costs_antimer)
+                cost_grad += (weights_antimer * cost_antimer_grad).T
             if sphere_first:
                 cost_grad -= (dot_veczd(cost_grad.T, verts.T) * verts.T).T
             #print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
@@ -1395,13 +1409,20 @@ def cartogram(mesh,
     is_water = land_portions < TOLERANCE
     weights_water = np.where(is_water, 0.1, 1)
     weights_pop = 0.2 + 0.8 * A
+    antimer = np.logical_and(mesh.verts[:, 0] < TOLERANCE,
+                             np.abs(mesh.verts[:, 1]) < TOLERANCE)
+    north_pole = np.logical_and(antimer, 1 - mesh.verts[:, 2] < TOLERANCE)
+    weights_antimer = ((0.5 + 0.5 * mesh.verts[:, 2])**1.5
+                       / np.sum(np.where(antimer, 1, 0)))
     weights_dist = 0.05 * weights_water * weights_pop
     weights_area = 0.02 * weights_water * weights_pop
     weight_boundary = 1e-7
+    weights_antimer = 100 * weights_antimer
     weight_error = 1
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
+                                              weights_antimer,
                                               weight_error),
                          verts_new,
                          iteration_count=max_iterations,
@@ -1411,10 +1432,12 @@ def cartogram(mesh,
     weights_dist = 0.0005 * weights_water * weights_pop
     weights_area = 0.0002 * weights_water * weights_pop
     weight_boundary = 1e-9
+    weights_antimer = 0.01 * weights_antimer
     weight_error = 1
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
+                                              weights_antimer,
                                               weight_error),
                          verts_new,
                          iteration_count=max_iterations,
