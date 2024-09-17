@@ -1210,7 +1210,7 @@ def cartogram(mesh,
     region_areas_intended = pop_array / world_pop_density
     region_scales_intended = region_areas_intended / region_areas_og
     land_portions = np.sum(portions, axis=1)
-    A = tri_scales_blurred(mesh,
+    A = 1 + 0*tri_scales_blurred(mesh,
                            portions,
                            region_scales_intended,
                            num_blurs=256)
@@ -1407,18 +1407,19 @@ def cartogram(mesh,
         raise ValueError
 
     is_water = land_portions < TOLERANCE
-    weights_water = np.where(is_water, 0.1, 1)
+    weights_water = np.where(is_water, 0.03, 1)
     weights_pop = 0.2 + 0.8 * A
     antimer = np.logical_and(mesh.verts[:, 0] < TOLERANCE,
                              np.abs(mesh.verts[:, 1]) < TOLERANCE)
     north_pole = np.logical_and(antimer, 1 - mesh.verts[:, 2] < TOLERANCE)
-    weights_antimer = ((0.5 + 0.5 * mesh.verts[:, 2])**1.5
+    h = 0.5 + 0.5 * mesh.verts[:, 2]
+    weights_antimer = (np.where(h > 0.13, h**3, 0)
                        / np.sum(np.where(antimer, 1, 0)))
-    weights_dist = 0.05 * weights_water * weights_pop
-    weights_area = 0.02 * weights_water * weights_pop
+    weights_dist = 1 * weights_water * weights_pop
+    weights_area = 0.1 * weights_water * weights_pop
     weight_boundary = 1e-7
     weights_antimer = 100 * weights_antimer
-    weight_error = 1
+    weight_error = 0
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
@@ -1427,13 +1428,44 @@ def cartogram(mesh,
                          verts_new,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
-                         grad_tolerance=1e-1)
+                         grad_tolerance=1e-4)
+
+    weights_dist = 1 * weights_water * weights_pop
+    weights_area = 1 * weights_water * weights_pop
+    weight_boundary = 1e-7
+    weights_antimer = 100 * weights_antimer
+    weight_error = 0
+    verts_new = minimize(cost_grad_func_maker(weights_dist,
+                                              weights_area,
+                                              weight_boundary,
+                                              weights_antimer,
+                                              weight_error),
+                         verts_new,
+                         iteration_count=max_iterations,
+                         normalize_func=normalize_func,
+                         grad_tolerance=1e-4)
+    
     #"""
-    weights_dist = 0.0005 * weights_water * weights_pop
-    weights_area = 0.0002 * weights_water * weights_pop
+    weights_dist = 0.1 * weights_water * weights_pop
+    weights_area = 1 * weights_water * weights_pop
     weight_boundary = 1e-9
     weights_antimer = 0.01 * weights_antimer
-    weight_error = 1
+    weight_error = 0
+    verts_new = minimize(cost_grad_func_maker(weights_dist,
+                                              weights_area,
+                                              weight_boundary,
+                                              weights_antimer,
+                                              weight_error),
+                         verts_new,
+                         iteration_count=max_iterations,
+                         normalize_func=normalize_func,
+                         grad_tolerance=1e-4)
+
+    weights_dist = 0.01 * weights_water * weights_pop
+    weights_area = 1 * weights_water * weights_pop
+    weight_boundary = 1e-9
+    weights_antimer = 0.01 * weights_antimer
+    weight_error = 0
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
