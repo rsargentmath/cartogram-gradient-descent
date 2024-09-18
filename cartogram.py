@@ -1413,8 +1413,11 @@ def cartogram(mesh,
                              np.abs(mesh.verts[:, 1]) < TOLERANCE)
     north_pole = np.logical_and(antimer, 1 - mesh.verts[:, 2] < TOLERANCE)
     h = 0.5 + 0.5 * mesh.verts[:, 2]
-    weights_antimer = (np.where(h > 0.13, h**3, 0)
+    weights_antimer = (np.where(h > 0.13, h**1.5, 0)
                        / np.sum(np.where(antimer, 1, 0)))
+    weights_antimer = np.where(h > 1 - TOLERANCE,
+                               100 * weights_antimer,
+                               weights_antimer)
     weights_dist = 1 * weights_water * weights_pop
     weights_area = 0.1 * weights_water * weights_pop
     weight_boundary = 1e-7
