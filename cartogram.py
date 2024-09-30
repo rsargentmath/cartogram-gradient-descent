@@ -1413,7 +1413,7 @@ def cartogram(mesh,
                              np.abs(mesh.verts[:, 1]) < TOLERANCE)
     north_pole = np.logical_and(antimer, 1 - mesh.verts[:, 2] < TOLERANCE)
     h = 0.5 + 0.5 * mesh.verts[:, 2]
-    weights_antimer = (np.where(h > 0.13, h**1.5, 0)
+    weights_antimer = (np.where(h > 0.13, h, 0)
                        / np.sum(np.where(antimer, 1, 0)))
     weights_antimer = np.where(h > 1 - TOLERANCE,
                                100 * weights_antimer,
@@ -1436,7 +1436,7 @@ def cartogram(mesh,
     weights_dist = 1 * weights_water * weights_pop
     weights_area = 1 * weights_water * weights_pop
     weight_boundary = 1e-7
-    weights_antimer = 100 * weights_antimer
+    weights_antimer *= 1
     weight_error = 0
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
@@ -1452,7 +1452,7 @@ def cartogram(mesh,
     weights_dist = 0.1 * weights_water * weights_pop
     weights_area = 1 * weights_water * weights_pop
     weight_boundary = 1e-9
-    weights_antimer = 0.01 * weights_antimer
+    weights_antimer *= 0.1
     weight_error = 0
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
@@ -1467,7 +1467,7 @@ def cartogram(mesh,
     weights_dist = 0.01 * weights_water * weights_pop
     weights_area = 1 * weights_water * weights_pop
     weight_boundary = 1e-9
-    weights_antimer = 0.01 * weights_antimer
+    weights_antimer *= 0.1
     weight_error = 0
     verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
@@ -1477,7 +1477,7 @@ def cartogram(mesh,
                          verts_new,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
-                         grad_tolerance=3e-5)
+                         grad_tolerance=1e-7)
     #"""
     if sphere_first:
         set_up_plot(1.02, 1.02)
