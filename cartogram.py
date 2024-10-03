@@ -4,6 +4,7 @@ from typing import NamedTuple
 import json
 from time import perf_counter
 from matplotlib.colors import rgb2hex
+from matplotlib.patches import Polygon
 
 
 rng = np.random.default_rng()
@@ -1638,14 +1639,12 @@ def plot_mesh(mesh, tri_vals=None):
 
 
 def plot_polygons(poly_list, is_closed_list):
+    ax = plt.gca()
     for i, poly in enumerate(poly_list):
         poly_draw = poly[:, 0:2]
-        if is_closed_list[i]:
-            poly_draw = list(poly_draw)
-            poly_draw.append(poly_draw[0])
-            poly_draw = np.array(poly_draw)
-        xs, ys = poly_draw.T
-        plt.plot(xs, ys, c="m", linewidth=0.5)
+        ax.add_patch(Polygon(poly_draw,
+                             closed=is_closed_list[i],
+                             fill=False))
 
 
 def main():
