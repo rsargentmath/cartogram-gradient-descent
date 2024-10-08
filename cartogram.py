@@ -4,12 +4,13 @@ from typing import NamedTuple
 import json
 from time import perf_counter
 from matplotlib.colors import rgb2hex
+from matplotlib.patches import Polygon
 
 
 rng = np.random.default_rng()
 
 
-with open("ne_110m_admin_0_countries_lakes_FIXED.json", "r") as f:
+with open("ne_50m_admin_0_countries_lakes_FIXED.json", "r") as f:
     import_data = json.load(f)
 WORLD_BORDERS_DATA = {}
 WORLD_BORDERS_DATA_FLAT = {}
@@ -48,7 +49,7 @@ POPULATION_DICT = {"Afghanistan": 38928340, "Albania": 2837850, "Algeria": 43851
 			"New Zealand": 5084300, "Nicaragua": 6624550, "Niger": 24206640, "Nigeria": 206139590, "North Macedonia": 2072530,
 			"Norway": 5379480, "Oman": 5106620, "Pakistan": 220892330, "Palau": 18090, "Panama": 4314770, "Papua New Guinea": 8947030,
 			"Paraguay": 7132530, "Peru": 32971850, "Philippines": 109581090, "Poland": 37899070, "Portugal": 10297080, "Qatar": 2881060,
-			"Romania": 19257520, "Russia": 144104080, "Rwanda": 12952210, "Samoa": 198410, "San Marino": 33940, "São Tomé and Principe": 219160,
+			"Romania": 19257520, "Russia": 144104080, "Rwanda": 12952210, "Samoa": 198410, "San Marino": 33940, "Sao Tome and Principe": 219160,
 			"Saudi Arabia": 34813870, "Senegal": 16743930, "Republic of Serbia": 6899130, "Seychelles": 98460, "Sierra Leone": 7976980, "Singapore": 5685810,
 			"Slovakia": 5458830, "Slovenia": 2102420, "Solomon Islands": 686880, "Somalia": 10193220, "South Africa": 59308690,
 			"South Sudan": 11193730, "Spain": 47363420, "Sri Lanka": 21919000, "Saint Kitts and Nevis": 53190, "Saint Lucia": 183630,
@@ -1603,14 +1604,12 @@ def plot_mesh(mesh, tri_vals=None):
 
 
 def plot_polygons(poly_list, is_closed_list):
+    ax = plt.gca()
     for i, poly in enumerate(poly_list):
         poly_draw = poly[:, 0:2]
-        if is_closed_list[i]:
-            poly_draw = list(poly_draw)
-            poly_draw.append(poly_draw[0])
-            poly_draw = np.array(poly_draw)
-        xs, ys = poly_draw.T
-        plt.plot(xs, ys, c="m", linewidth=0.5)
+        ax.add_patch(Polygon(poly_draw,
+                             closed=is_closed_list[i],
+                             fill=False))
 
 
 def main():
