@@ -602,6 +602,55 @@ def subdivide_octahedron_interrupted(n, shift_degrees=0, return_boundary=True):
     return Mesh(verts=verts_final, tris=tris_final), verts_proj_final
 
 
+def subdivide_mesh_selected(mesh, tris_to_cut):
+    def tup(list_):
+        return tuple(sorted(list_))
+
+    verts_new = list(mesh.verts)
+    tris_new = []
+    edge_ixs_dict = {}
+    
+    def add_edge(p0, p1):
+        edge = tup([p0, p1])
+        if edge not in edge_ixs_dict:
+            midpoint = (mesh.verts[p0] + mesh.verts[p1]) / 2
+            if midpoint.shape[0] == 3:
+                midpoint = nzd(midpoint)
+            verts_new.append(midpoint)
+            edge_ixs_dict[edge] = len(verts_new) - 1            
+            
+    for ix in tris_to_cut:
+        tri = mesh.tris[ix]
+        add_edge(tri[0], tri[1])
+        add_edge(tri[1], tri[2])
+        add_edge(tri[2], tri[0])
+    for tri in mesh.tris:
+        a, b, c = tri
+        d = edge_ixs_dict.get(tup([a, b]))
+        e = edge_ixs_dict.get(tup([b, c]))
+        f = edge_ixs_dict.get(tup([c, a]))
+        d_fr = d is not None
+        e_fr = e is not None
+        f_fr = f is not None
+        if d_fr and e_fr and f_fr:
+            tris_new += [[a, d, f], [b, e, d], [c, f, e], [d, e, f]]
+        elif d_fr and e_fr and not f_fr:
+            tris_new += [[a, d, c], [b, e, d], [c, d, e]]
+        elif d_fr and not e_fr and f_fr:
+            tris_new += [[a, d, f], [b, f, d], [c, f, b]]
+        elif d_fr and not e_fr and not f_fr:
+            tris_new += [[a, d, c], [b, c, d]]
+        elif not d_fr and e_fr and f_fr:
+            tris_new += [[a, b, e], [a, e, f], [c, f, e]]
+        elif not d_fr and e_fr and not f_fr:
+            tris_new += [[a, b, e], [a, e, c]]
+        elif not d_fr and not e_fr and f_fr:
+            tris_new += [[a, b, f], [b, c, f]]
+        else:
+            tris_new += [[a, b, c]]
+    return Mesh(verts=np.array(verts_new), tris=np.array(tris_new))
+
+
 def mesh_edges_dict(mesh):
     edges_dict = {}
     for i, tri in enumerate(mesh.tris):
