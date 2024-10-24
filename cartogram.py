@@ -602,6 +602,55 @@ def subdivide_octahedron_interrupted(n, shift_degrees=0, return_boundary=True):
     return Mesh(verts=verts_final, tris=tris_final), verts_proj_final
 
 
+def subdivide_mesh_selected(mesh, tris_to_cut):
+    def tup(list_):
+        return tuple(sorted(list_))
+
+    verts_new = list(mesh.verts)
+    tris_new = []
+    edge_ixs_dict = {}
+    
+    def add_edge(p0, p1):
+        edge = tup([p0, p1])
+        if edge not in edge_ixs_dict:
+            midpoint = (mesh.verts[p0] + mesh.verts[p1]) / 2
+            if midpoint.shape[0] == 3:
+                midpoint = nzd(midpoint)
+            verts_new.append(midpoint)
+            edge_ixs_dict[edge] = len(verts_new) - 1            
+            
+    for ix in tris_to_cut:
+        tri = mesh.tris[ix]
+        add_edge(tri[0], tri[1])
+        add_edge(tri[1], tri[2])
+        add_edge(tri[2], tri[0])
+    for tri in mesh.tris:
+        a, b, c = tri
+        d = edge_ixs_dict.get(tup([a, b]))
+        e = edge_ixs_dict.get(tup([b, c]))
+        f = edge_ixs_dict.get(tup([c, a]))
+        d_fr = d is not None
+        e_fr = e is not None
+        f_fr = f is not None
+        if d_fr and e_fr and f_fr:
+            tris_new += [[a, d, f], [b, e, d], [c, f, e], [d, e, f]]
+        elif d_fr and e_fr and not f_fr:
+            tris_new += [[a, d, c], [b, e, d], [c, d, e]]
+        elif d_fr and not e_fr and f_fr:
+            tris_new += [[a, d, f], [b, f, d], [c, f, b]]
+        elif d_fr and not e_fr and not f_fr:
+            tris_new += [[a, d, c], [b, c, d]]
+        elif not d_fr and e_fr and f_fr:
+            tris_new += [[a, b, e], [a, e, f], [c, f, e]]
+        elif not d_fr and e_fr and not f_fr:
+            tris_new += [[a, b, e], [a, e, c]]
+        elif not d_fr and not e_fr and f_fr:
+            tris_new += [[a, b, f], [b, c, f]]
+        else:
+            tris_new += [[a, b, c]]
+    return Mesh(verts=np.array(verts_new), tris=np.array(tris_new))
+
+
 def mesh_edges_dict(mesh):
     edges_dict = {}
     for i, tri in enumerate(mesh.tris):
@@ -1215,6 +1264,10 @@ def cartogram(mesh,
                            portions,
                            region_scales_intended,
                            num_blurs=256)
+    for i, v in enumerate(mesh.verts):
+        if np.abs(v[0]) < TOLERANCE and np.abs(v[1]) < TOLERANCE and v[2] > 0:
+            npole_ix = i
+            break
     if boundary is not None and not sphere_first:
         quad0 = np.logical_and(boundary, np.logical_and(
                                initial_verts[:, 0] > TOLERANCE,
@@ -1302,7 +1355,7 @@ def cartogram(mesh,
                 centers = nzd_veczd(verts[mesh.tris[:, 0]].T
                                     + verts[mesh.tris[:, 1]].T
                                     + verts[mesh.tris[:, 2]].T)
-                eps = 8 / np.sqrt(mesh.tris.shape[0])
+                eps = 6 / np.sqrt(mesh.tris.shape[0])
                 H, H_grad = pseudocyl_blurred_jacobian_grad(proj_derivs,
                                                             centers, eps)
             (D, D_grad), (dist, dist_grad) = tri_det_dist_value_grads_veczd(
@@ -1388,6 +1441,7 @@ def cartogram(mesh,
             if fix_antimer:
                 cost += np.sum(weights_antimer * costs_antimer)
                 cost_grad += (weights_antimer * cost_antimer_grad).T
+                cost_grad[npole_ix] = 0
             if sphere_first:
                 cost_grad -= (dot_veczd(cost_grad.T, verts.T) * verts.T).T
             #print(f"cost {cost:.5f} grad {norm_flat(cost_grad):.5f}")
@@ -1397,7 +1451,10 @@ def cartogram(mesh,
 
     def normalize_func(verts):
         if sphere_first:
-            return nzd_veczd(verts.T).T
+            verts_out = nzd_veczd(verts.T).T
+            if fix_antimer:
+                verts_out[npole_ix] = [0, 0, 1]
+            return verts_out
         return verts
     
     if initial_verts is not None:
@@ -1414,17 +1471,16 @@ def cartogram(mesh,
                              np.abs(mesh.verts[:, 1]) < TOLERANCE)
     north_pole = np.logical_and(antimer, 1 - mesh.verts[:, 2] < TOLERANCE)
     h = 0.5 + 0.5 * mesh.verts[:, 2]
-    weights_antimer = (np.where(h > 0.13, h, 0)
-                       / np.sum(np.where(antimer, 1, 0)))
-    weights_antimer = np.where(h > 1 - TOLERANCE,
-                               100 * weights_antimer,
+    weights_antimer = np.where(h > 0.13, h**0.8, 0) / 97
+    weights_antimer = np.where(h > (2 + np.sqrt(3)) / 4,
+                               10 * weights_antimer,
                                weights_antimer)
     weights_dist = 1 * weights_water * weights_pop
     weights_area = 0.1 * weights_water * weights_pop
     weight_boundary = 1e-7
     weights_antimer = 100 * weights_antimer
     weight_error = 0
-    verts_new = minimize(cost_grad_func_maker(weights_dist,
+    """verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
                                               weights_antimer,
@@ -1432,14 +1488,14 @@ def cartogram(mesh,
                          verts_new,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
-                         grad_tolerance=1e-4)
+                         grad_tolerance=1e-4)"""
 
     weights_dist = 1 * weights_water * weights_pop
     weights_area = 1 * weights_water * weights_pop
     weight_boundary = 1e-7
     weights_antimer *= 1
     weight_error = 0
-    verts_new = minimize(cost_grad_func_maker(weights_dist,
+    """verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
                                               weights_antimer,
@@ -1447,7 +1503,7 @@ def cartogram(mesh,
                          verts_new,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
-                         grad_tolerance=1e-4)
+                         grad_tolerance=1e-4)"""
     
     #"""
     weights_dist = 0.1 * weights_water * weights_pop
@@ -1455,7 +1511,7 @@ def cartogram(mesh,
     weight_boundary = 1e-9
     weights_antimer *= 0.1
     weight_error = 0
-    verts_new = minimize(cost_grad_func_maker(weights_dist,
+    """verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
                                               weights_antimer,
@@ -1463,7 +1519,7 @@ def cartogram(mesh,
                          verts_new,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
-                         grad_tolerance=1e-4)
+                         grad_tolerance=1e-4)"""
 
     weights_dist = 0.01 * weights_water * weights_pop
     weights_area = 1 * weights_water * weights_pop
