@@ -12,6 +12,7 @@ rng = np.random.default_rng()
 
 with open("ne_50m_admin_0_countries_lakes_FIXED.json", "r") as f:
     import_data = json.load(f)
+EXCLUDED_LIST = ["Vatican", "Monaco", "San Marino", "Liechtenstein", "Kashmir"]
 WORLD_BORDERS_DATA = {}
 WORLD_BORDERS_DATA_FLAT = {}
 for k, v in import_data.items():
@@ -651,6 +652,75 @@ def subdivide_mesh_selected(mesh, tris_to_cut):
     return Mesh(verts=np.array(verts_new), tris=np.array(tris_new))
 
 
+def subdivide_mesh_for_cartogram(mesh,
+                                 initial_portions=None,
+                                 pop_array=POPULATION_ARRAY):
+    portions = initial_portions
+    if portions is None:
+        portions = area_portions_array(mesh, WORLD_BORDERS_DATA_FLAT)
+        
+    G0 = matrix_basis_vecs_to_tri_veczd(mesh.verts, mesh.tris)[1]
+    M0 = 1/2 * det_2d_veczd(G0)
+    tri_region_areas_og = M0[:, np.newaxis] * portions
+            # absolute area of each region falling in each tri
+    region_areas_og = np.sum(tri_region_areas_og, axis=0)
+    world_pop_density = np.sum(pop_array) / np.sum(region_areas_og)
+    region_areas_intended = pop_array / world_pop_density
+    region_scales_intended = region_areas_intended / region_areas_og
+
+    #region_res_needed = np.maximum(region_scales_intended,
+    #                    64 * np.pi / (mesh.tris.shape[0] * region_areas_og))
+    res_needed_area = 64 * np.pi / (mesh.tris.shape[0] * region_areas_og)
+    subs_needed_area = np.floor(np.log(res_needed_area)
+                                     / np.log(4)).astype(int)
+    subs_needed_scale = np.floor(np.log(region_scales_intended)
+                                     / np.log(4)).astype(int)
+    for i, name in enumerate(WORLD_BORDERS_DATA_FLAT.keys()):
+        if name in EXCLUDED_LIST:
+            subs_needed_area[i] = 0
+            subs_needed_scale[i] = 0
+
+    mesh_list = [mesh]
+    tris_to_cut_list = []
+    portions_list = [portions]
+    for i in range(1, 1000): #generic big num, break well before 1000
+        regs_to_cut_area = i <= subs_needed_area
+        regs_to_cut_scale = i <= subs_needed_scale
+        tris_to_cut = []
+        mesh_current = mesh_list[-1]
+        has_border = np.sum(np.where(portions > TOLERANCE, 1, 0), axis=1) >= 2
+        for j in range(mesh_current.tris.shape[0]):
+            if i == 1:
+                if np.logical_and(portions[j] > TOLERANCE,
+                        np.logical_or(regs_to_cut_area, regs_to_cut_scale)
+                        ).any():
+                    tris_to_cut.append(j)
+                elif nzd(np.sum(mesh_current.verts[mesh_current.tris[j]],
+                                   axis=0))[2] > 0.9:
+                    tris_to_cut.append(j)
+                elif has_border[j]:
+                    tris_to_cut.append(j)
+            elif np.logical_and(portions[j] > TOLERANCE,
+                                regs_to_cut_scale).any():
+                tris_to_cut.append(j)
+            elif has_border[j] and np.logical_and(portions[j] > TOLERANCE,
+                    regs_to_cut_area).any():
+                tris_to_cut.append(j)
+        if len(tris_to_cut) == 0:
+            break
+        tris_to_cut_list.append(tris_to_cut)
+        print("Mesh tris",
+              str(mesh_current.tris.shape[0]) + ", subdividing",
+              len(tris_to_cut))
+        mesh_new = subdivide_mesh_selected(mesh_current, tris_to_cut)
+        portions = area_portions_array(mesh_new, WORLD_BORDERS_DATA_FLAT,
+                                       mesh_current, portions_list[-1])
+        mesh_list.append(mesh_new)
+        portions_list.append(portions)
+    print("Final mesh tris", mesh_list[-1].tris.shape[0])
+    return mesh_list, tris_to_cut_list, portions_list
+
+
 def mesh_edges_dict(mesh):
     edges_dict = {}
     for i, tri in enumerate(mesh.tris):
@@ -1046,9 +1116,14 @@ def tri_det_frob_value_grads(a, b, c, G0, G):
     return det_value_grad, frob_value_grad
 
 
-def area_portions_array(mesh, borders_data_flat):
+def area_portions_array(mesh, borders_data_flat,
+                        mesh_old=None, portions_old=None):
     
     def tri_area_portions(tri):
+        if mesh_old is not None and portions_old is not None:
+            for i, t in enumerate(mesh_old.tris):
+                if (t == tri).all():
+                    return portions_old[i]
         portions = []
         for region in borders_data_flat.values():
             this_region_portion = 0
@@ -1249,6 +1324,19 @@ def cartogram(mesh,
               proj_derivs=equal_earth_derivs,
               initial_verts=None,
               boundary=None):
+    if portions.shape[1] == 201:
+        portions_excl = []
+        for i, name in enumerate(WORLD_BORDERS_DATA_FLAT.keys()):
+            if name not in EXCLUDED_LIST:
+                portions_excl.append(portions[:, i])
+        portions = np.array(portions_excl).T
+    if pop_array.shape[0] == 201:
+        pop_array_excl = []
+        for i, name in enumerate(WORLD_BORDERS_DATA_FLAT.keys()):
+            if name not in EXCLUDED_LIST:
+                pop_array_excl.append(pop_array[i])
+        pop_array = np.array(pop_array_excl)
+        
     if (hybrid or fix_antimer) and not sphere_first:
         raise ValueError
     G0 = matrix_basis_vecs_to_tri_veczd(mesh.verts, mesh.tris)[1]
@@ -1263,8 +1351,11 @@ def cartogram(mesh,
     A = tri_scales_blurred(mesh,
                            portions,
                            region_scales_intended,
-                           num_blurs=256)
-    if boundary is not None and not sphere_first:
+                           num_blurs=16)
+    if boundary is None and not sphere_first:
+        boundary = np.logical_and(np.abs(mesh.verts[:, 1]) < TOLERANCE,
+                                  mesh.verts[:, 0] < TOLERANCE)
+    if not sphere_first:
         quad0 = np.logical_and(boundary, np.logical_and(
                                initial_verts[:, 0] > TOLERANCE,
                                initial_verts[:, 1] > TOLERANCE))

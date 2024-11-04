@@ -1,0 +1,195 @@
+
+
+poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+poly_list_inter, is_closed_list_inter = interrupt_polygon_list_antimeridian(poly_list, is_closed_list)
+poly_list_proj = [np.array([hammer_projection(cartes_to_lonlat(v)) for v in poly]) for poly in poly_list_inter]
+set_up_plot()
+
+
+plot_polygons(poly_list_proj, is_closed_list_inter)
+set_up_plot()
+for i, poly in enumerate(poly_list_proj):
+        poly_draw = poly[:, 0:2]
+        xs, ys = poly_draw.T
+        plt.plot(xs, ys, c="y", linewidth=0.2)
+		
+		
+		
+FOR SPHERE FIRST:
+def equal_earth(lonlat):
+    return pseudocylindrical(equal_earth_derivs, lonlat)
+poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+poly_list_cart = polys_old_mesh_to_new(poly_list, mesh, cart)
+poly_list, is_closed_list = interrupt_polygon_list_antimeridian(poly_list_cart,
+                                                            is_closed_list,
+                                                            shift_degrees=0)
+poly_list = [equal_earth(cartes_to_lonlat(poly.T)).T for poly in poly_list]
+set_up_plot()
+plot_polygons(poly_list, is_closed_list)
+
+
+edge = np.linspace(-np.pi/2, np.pi/2, 1000)
+edge1 = np.array([np.pi + 0*edge, edge])
+edge2 = np.array([-np.pi + 0*edge, edge]).T[::-1].T
+edge = np.concatenate((edge1, edge2), axis=1)
+plot_polygons([equal_earth(edge).T], [True])
+xlim = equal_earth(np.array([np.pi, 0]))[0] + 0.01
+ylim = equal_earth(np.array([0, np.pi/2]))[1] + 0.01
+plt.gca().set_xlim(-xlim, xlim)
+plt.gca().set_ylim(-ylim, ylim)
+
+SHIFTED:
+    ang = np.deg2rad(11)
+    mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
+    def equal_earth(lonlat):
+        return pseudocylindrical(equal_earth_derivs, lonlat)
+    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+    
+    res = 0.0001
+    for j in range(12):
+        ang = np.pi * j/12
+        mul = 10/12
+        num_verts = int(np.ceil(mul * np.pi / res)) + 1
+        lon_line_ll_0 = np.column_stack([num_verts * [ang],
+                                np.linspace(-mul * np.pi/2, mul * np.pi/2, num_verts, True)])
+        lon_line_ll_1 = np.column_stack([num_verts * [ang],
+                                np.linspace(np.pi - mul * np.pi/2, np.pi + mul * np.pi/2, num_verts, True)])
+        poly_list.append(lonlat_to_cartes(lon_line_ll_0.T).T)
+        poly_list.append(lonlat_to_cartes(lon_line_ll_1.T).T)
+        is_closed_list += [False, False]
+        if j == 0:
+            continue
+        ang -= np.pi/2
+        num_verts = int(np.ceil(2*np.pi * np.cos(ang) / res))
+        lat_line_ll = np.column_stack(
+                        [np.linspace(0, 2*np.pi, num_verts, False),
+                         num_verts * [ang]])
+        poly_list.append(lonlat_to_cartes(lat_line_ll.T).T)
+        is_closed_list.append(True)
+    
+    poly_list = [matrix_times_array_of_vectors(mat, poly) for poly in poly_list]
+    poly_list_cart = polys_old_mesh_to_new(poly_list, mesh, cart)
+    poly_list, is_closed_list = interrupt_polygon_list_antimeridian(poly_list_cart,
+                                                                is_closed_list,
+                                                                shift_degrees=0)
+    poly_list = [equal_earth(cartes_to_lonlat(poly.T)).T for poly in poly_list]
+    set_up_plot()
+    plot_polygons(poly_list, is_closed_list)
+
+
+    edge = np.linspace(-np.pi/2, np.pi/2, 1000)
+    edge1 = np.array([np.pi + 0*edge, edge])
+    edge2 = np.array([-np.pi + 0*edge, edge]).T[::-1].T
+    edge = np.concatenate((edge1, edge2), axis=1)
+    plot_polygons([equal_earth(edge).T], [True])
+    xlim = equal_earth(np.array([np.pi, 0]))[0] + 0.01
+    ylim = equal_earth(np.array([0, np.pi/2]))[1] + 0.01
+    _ = plt.gca().set_xlim(-xlim, xlim)
+    _ = plt.gca().set_ylim(-ylim, ylim)
+	
+	
+	
+--------
+lp621 = np.sum(np.load("oct48-shifted-110m-portions.npy"))
+tris_to_cut = []
+for i, tri in enumerate(mesh0.tris):
+    a, b, c = mesh0.verts[tri]
+    n = nzd(a + b + c)
+    if n[2] >= np.sqrt(3)/2 and lp621[i] > TOLERANCE and lp621[i] < 1 - TOLERANCE:
+        tris_to_cut.append(i)
+mesh621 = subdivide_mesh_selected(mesh0, tris_to_cut)
+set_up_plot()
+plot_mesh(mesh621)
+
+
+--------
+ORTHOGRAPHIC
+    ang = np.deg2rad(11)
+    mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
+    ang1 = np.pi / 6
+    ang2 = np.pi / 3
+    mat1 = (np.array([[1, 0, 0], [0, np.cos(ang1), np.sin(ang1)], [0, -np.sin(ang1), np.cos(ang1)]])
+            @ np.array([[np.cos(ang2), np.sin(ang2), 0], [-np.sin(ang2), np.cos(ang2), 0], [0, 0, 1]]))
+    def equal_earth(lonlat):
+        return pseudocylindrical(equal_earth_derivs, lonlat)
+    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+    
+    
+    poly_list = [matrix_times_array_of_vectors(mat, poly) for poly in poly_list]
+    poly_list = polys_old_mesh_to_new(poly_list, mesh, cart)
+    poly_list = [matrix_times_array_of_vectors(mat1, poly) for poly in poly_list]
+    verts1 = matrix_times_array_of_vectors(mat1, cart.verts)
+    mesh1 = Mesh(verts1, mesh.tris)
+    poly_list, is_closed_list = clip_polygon_list_hemisphere(poly_list,
+                                                                is_closed_list)
+    poly_list = [poly[:, 0:2] for poly in poly_list]
+    set_up_plot()
+    plot_mesh(mesh1)
+    plot_polygons(poly_list, is_closed_list)
+	
+    xlim = 1.01
+    ylim = 1.01
+    _ = plt.gca().set_xlim(-xlim, xlim)
+    _ = plt.gca().set_ylim(-ylim, ylim)
+
+
+--------
+    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+
+    poly_list, is_closed_list = clip_polygon_list_hemisphere(poly_list,
+                                                                is_closed_list)
+    poly_list = [poly[:, 0:2] for poly in poly_list]
+    set_up_plot()
+    plot_mesh(mesh)
+    plot_polygons(poly_list, is_closed_list)
+	
+    xlim = 1.01
+    ylim = 1.01
+    _ = plt.gca().set_xlim(-xlim, xlim)
+    _ = plt.gca().set_ylim(-ylim, ylim)
+
+--------
+SUBDIV CARTOGRAM
+    import pickle
+    with open("oct32-tris-to-cut-list-excl.pickle", "rb") as f:
+        tris_to_cut_list = pickle.load(f)
+    with open("oct32-portions-list-50m.pickle", "rb") as f:
+        portions_list = pickle.load(f)
+    mesh = subdivide_mesh_sphere(OCTAHEDRON, 32)
+    for tris_to_cut in tris_to_cut_list:
+        mesh = subdivide_mesh_selected(mesh, tris_to_cut)
+    portions = portions_list[-1]
+    cart = cartogram(mesh, portions, POPULATION_ARRAY, 1000000, sphere_first=True, hybrid=True, fix_antimer=True, proj_derivs=mollweide_derivs)
+
+SUBDIV CARTOGRAM PLANE
+    import pickle
+    with open("oct32-tris-to-cut-list-excl.pickle", "rb") as f:
+        tris_to_cut_list = pickle.load(f)
+    with open("oct32-portions-list-50m.pickle", "rb") as f:
+        portions_list = pickle.load(f)
+    mesh, verts_proj = subdivide_octahedron_interrupted(32, 0, False)
+    mesh_proj = Mesh(verts_proj, mesh.tris)
+    for tris_to_cut in tris_to_cut_list:
+        mesh = subdivide_mesh_selected(mesh, tris_to_cut)
+        mesh_proj = subdivide_mesh_selected(mesh_proj, tris_to_cut)
+    portions = portions_list[-1]
+    cart = cartogram(mesh, portions, POPULATION_ARRAY, 1000000, initial_verts=mesh_proj.verts)
+
+DRAW PLANE
+    ang = np.deg2rad(11)
+    mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
+    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+    
+    poly_list = [matrix_times_array_of_vectors(mat, poly) for poly in poly_list]
+    poly_list, is_closed_list = interrupt_polygon_list_antimeridian(poly_list,
+                                                                is_closed_list,
+                                                                shift_degrees=0)
+    poly_list = polys_old_mesh_to_new(poly_list, mesh, cart)
+    set_up_plot()
+    plot_mesh(cart)
+    plot_polygons(poly_list, is_closed_list)
+	
+    xlim = 4
+    ylim = 2
+    _ = plt.gca().set_xlim(-xlim, xlim)
+    _ = plt.gca().set_ylim(-ylim, ylim)
