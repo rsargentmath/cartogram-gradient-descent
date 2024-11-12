@@ -153,12 +153,13 @@ SUBDIV CARTOGRAM
     import pickle
     with open("oct32-tris-to-cut-list-excl.pickle", "rb") as f:
         tris_to_cut_list = pickle.load(f)
-    with open("oct32-portions-list-50m.pickle", "rb") as f:
-        portions_list = pickle.load(f)
+    #with open("oct32-portions-list-50m.pickle", "rb") as f:
+    #    portions_list = pickle.load(f)
     mesh = subdivide_mesh_sphere(OCTAHEDRON, 32)
     for tris_to_cut in tris_to_cut_list:
         mesh = subdivide_mesh_selected(mesh, tris_to_cut)
-    portions = portions_list[-1]
+    #portions = portions_list[-1]
+	portions = np.load("oct32-subdiv-shifted-50m-portions.npy")
     cart = cartogram(mesh, portions, POPULATION_ARRAY, 1000000, sphere_first=True, hybrid=True, fix_antimer=True, proj_derivs=mollweide_derivs)
 
 SUBDIV CARTOGRAM PLANE
