@@ -823,6 +823,7 @@ def minimize(
             print(f"iter {i} cost {cost_grad.value:.5f} grad {norm_flat(cost_grad.grad):.5f}")
         g = cost_grad.grad
         if (np.abs(g) < grad_tolerance).all():
+            print(f"iter {i} cost {cost_grad.value:.5f} grad {norm_flat(cost_grad.grad):.5f}")
             return x
         search_dir = -H(len(s), g)
         search_dir_local = -H_0_scale * g
@@ -1316,14 +1317,17 @@ def tri_det_dist_value_grads_veczd(G0, G, H=None, H_grad=None):
 def cartogram(mesh,
               portions,
               pop_array,
-              max_iterations,
               *,
+              max_iterations=1000000,
+              num_phases=6,
               sphere_first=False,
               hybrid=False,
               fix_antimer=False,
-              proj_derivs=equal_earth_derivs,
+              proj_derivs=mollweide_derivs,
               initial_verts=None,
               boundary=None):
+    start_time = perf_counter()
+    
     if portions.shape[1] == 201:
         portions_excl = []
         for i, name in enumerate(WORLD_BORDERS_DATA_FLAT.keys()):
@@ -1547,170 +1551,57 @@ def cartogram(mesh,
     else:
         raise ValueError
 
+    def region_errs_abs_rel(verts):
+        if sphere_first:
+            tan_space_mats, G = matrix_basis_vecs_to_tri_sphere_veczd(
+                verts, mesh.tris)
+        else:
+            tan_space_mats, G = matrix_basis_vecs_to_tri_veczd(
+                verts, mesh.tris)
+        M = 1/2 * det_2d_veczd(G)
+        tri_region_areas = M[:, np.newaxis] * portions
+        region_areas = np.sum(tri_region_areas, axis=0)
+        region_errors_abs = np.abs(region_areas - region_areas_intended)
+        return region_errors_abs, region_errors_abs / region_areas_intended
+
     is_water = land_portions < TOLERANCE
     weights_water = np.where(is_water, 0.1, 1)
     weights_pop = 0.2 + 0.8 * A
     antimer = np.logical_and(mesh.verts[:, 0] < TOLERANCE,
                              np.abs(mesh.verts[:, 1]) < TOLERANCE)
     north_pole = np.logical_and(antimer, 1 - mesh.verts[:, 2] < TOLERANCE)
-    weights_antimer = ((0.5 + 0.5 * mesh.verts[:, 2])**1.5
-                       / np.sum(np.where(antimer, 1, 0)))
+    weights_antimer_0 = ((0.5 + 0.5 * mesh.verts[:, 2])**1.5
+                         / np.sum(np.where(antimer, 1, 0)))
     weights_dist = 0.05 * weights_water * weights_pop
     weights_area = 0.02 * weights_water * weights_pop
     weight_boundary = 1e-7
-    weights_antimer = 100 * weights_antimer
+    weights_antimer = 100 * weights_antimer_0
     weight_error = 1
-    verts_new = minimize(cost_grad_func_maker(weights_dist,
-                                              weights_area,
-                                              weight_boundary,
-                                              weights_antimer,
-                                              weight_error),
-                         verts_new,
-                         iteration_count=max_iterations,
-                         normalize_func=normalize_func,
-                         grad_tolerance=1e-1)
-    #"""
-    weights_dist = 0.0005 * weights_water * weights_pop
-    weights_area = 0.0002 * weights_water * weights_pop
-    weight_boundary = 1e-9
-    weights_antimer = 0.01 * weights_antimer
-    weight_error = 1
-    verts_new = minimize(cost_grad_func_maker(weights_dist,
-                                              weights_area,
-                                              weight_boundary,
-                                              weights_antimer,
-                                              weight_error),
-                         verts_new,
-                         iteration_count=max_iterations,
-                         normalize_func=normalize_func,
-                         grad_tolerance=3e-5)
-    #"""
-    if sphere_first:
-        set_up_plot(1.02, 1.02)
-    else:
-        set_up_plot(3.5, 2)
+    grad_tolerance = 1e-2
+
+    for i in range(num_phases):
+        verts_new = minimize(cost_grad_func_maker(weights_dist,
+                                                  weights_area,
+                                                  weight_boundary,
+                                                  weights_antimer,
+                                                  weight_error),
+                             verts_new,
+                             iteration_count=max_iterations,
+                             normalize_func=normalize_func,
+                             grad_tolerance=grad_tolerance)
+        errs_abs, errs_rel = region_errs_abs_rel(verts_new)
+        print("Max abs/rel", np.max(errs_abs), np.max(errs_rel))
+        print("Median abs/rel", np.median(errs_abs), np.median(errs_rel))
+        print(f"{perf_counter() - start_time:.2f} seconds")
+
+        weights_dist *= 0.1
+        weights_area *= 0.1
+        weight_boundary *= 0.1
+        weights_antimer *= 0.1
+        grad_tolerance *= 0.1
+    
     mesh_final = Mesh(verts=verts_new, tris=mesh.tris)
-    plot_mesh(mesh_final, np.clip(land_portions, 0, 1))
-    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
-    poly_list, is_closed_list = interrupt_polygon_list_antimeridian(poly_list,
-                                                            is_closed_list,
-                                                            shift_degrees=11)
-    poly_list_proj = polys_old_mesh_to_new(poly_list, mesh, mesh_final)
-    plot_polygons(poly_list_proj, is_closed_list)
     return mesh_final
-
-
-def octahedron_equal_area(it_count):
-    mesh = subdivide_tri_sphere(*OCTAHEDRON.verts[OCTAHEDRON.tris[0]], 48)
-    verts_og, tris = mesh.verts, mesh.tris
-    num_verts = verts_og.shape[0]
-    num_tris = tris.shape[0]
-    G0_array = np.empty((num_tris, 2, 2))
-    for i, tri in enumerate(tris):
-        a, b, c = verts_og[tri]
-        G0 = matrix_basis_vecs_to_tri(a, b, c)
-        G0_array[i] = G0
-
-    def cost_grad_func_maker(weight_dist):
-        return lambda verts_state: cost_grad_func(verts_state, weight_dist)
-    
-    def cost_grad_func(verts_state, weight_dist=0.05):
-        weight_area = 1
-        #weight_dist = 0.05
-        cost = 0
-        grad_cost = np.zeros_like(verts_state)
-        max_ratio_seen = 0
-        for i, tri in enumerate(tris):
-            a, b, c = verts_state[tri]
-            A = 1   # desired area scale
-            G0 = G0_array[i]
-            M0 = 1/2 * np.linalg.det(G0)
-            tan_space_mat = tangent_space_matrix(a, b, c, False)
-            G = matrix_basis_vecs_to_tri(a, b, c, False)
-            (D, D_grad), (F, F_grad) = tri_det_frob_value_grads(a, b, c, G0, G)
-            this_tri_cost = M0 * (weight_dist * (F/D - 2)
-                                  + weight_area * (D/A + A/D - 2))
-            this_tri_cost_grad = M0 * (weight_dist * (F_grad*D - F*D_grad)/(D*D)
-                                + weight_area * (D_grad/A - A*D_grad/(D*D)))
-            this_tri_cost_grad_global_coords = matrix_times_array_of_vectors(
-                                                   tan_space_mat[:, 0:2],
-                                                   this_tri_cost_grad)
-            cost += this_tri_cost
-            for j in range(3):
-                grad_cost[tri[j]] += this_tri_cost_grad_global_coords[j]
-            max_ratio_seen = max(max_ratio_seen, D/A, A/D)
-        print(max_ratio_seen, cost)
-        return ValueGrad(value=cost, grad=grad_cost)
-
-    def normalize_func(verts_state):
-        b_over_a = 3**1.5 / 2 * 0.25681278
-        a = np.sqrt( np.pi / (2 * (3**1.5 + (1 - 3**0.5) * b_over_a**2)) )
-
-        def this_clamp_inside_tri(v):
-            return clamp_inside_tri_BAD(v,
-                                        np.array([[0, 1],
-                                                  [-3**0.5/2, -1/2],
-                                                  [3**0.5/2, -1/2]]),
-                                        np.array([-a, -a, -a]))
-
-        return np.apply_along_axis(this_clamp_inside_tri, 1, verts_state)
-
-    rot_mat = tangent_space_matrix(*OCTAHEDRON.verts[OCTAHEDRON.tris[0]]).T
-    initial_state = matrix_times_array_of_vectors(rot_mat, verts_og)[..., 0:2]
-    #initial_state = normalize_func(initial_state)
-
-    t0 = perf_counter()
-    verts_new = minimize(cost_grad_func_maker(0.2),
-                         initial_state,
-                         iteration_count=it_count,
-                         #normalize_func=normalize_func)
-                         grad_tolerance=1e-2,
-                         )
-    verts_new = minimize(cost_grad_func_maker(0.001),
-                         initial_state,
-                         iteration_count=it_count,
-                         #normalize_func=normalize_func)
-                         grad_tolerance=1e-5,
-                         )
-    t1 = perf_counter()
-    print(f"{t1 - t0:.2f} seconds")
-    
-    scale_factors = np.array([
-        tri_area_plane(*verts_new[tri])/tri_area_plane(*verts_og[tri])
-        for tri in tris])
-    print(np.min(scale_factors), np.max(scale_factors))
-    set_up_plot(0.85, 0.1)
-    plot_mesh(Mesh(verts=verts_new, tris=tris))
-    """
-    lines = octant_graticule(18)
-    for line in lines:
-        def to_new_mesh(v):
-            return point_old_mesh_to_new(v, verts_og, verts_new, tris)
-        line_new = np.apply_along_axis(to_new_mesh, 1, line)
-        plot_curve(line_new)
-    """
-    return Mesh(verts=verts_new, tris=tris)
-
-
-def octant_graticule(n, resolution=0.005):
-    lines = []
-    for i in range(n + 1):
-        lon = np.pi/2 * i/n
-        start = np.array([lon, 0])
-        end = np.array([lon, np.pi/2])
-        num_points = int(np.ceil(np.pi/(2*resolution))) + 1
-        line_lonlat = np.linspace(start, end, num_points)
-        line = np.apply_along_axis(lonlat_to_cartes, 1, line_lonlat)
-        lines.append(line)
-    for i in range(n):
-        lat = np.pi/2 * i/n
-        start = np.array([0, lat])
-        end = np.array([np.pi/2, lat])
-        num_points = int(np.ceil(np.pi/(2*resolution) * np.cos(lat))) + 1
-        line_lonlat = np.linspace(start, end, num_points)
-        line = np.apply_along_axis(lonlat_to_cartes, 1, line_lonlat)
-        lines.append(line)
-    return lines
 
 
 def plot_curve(curve):
