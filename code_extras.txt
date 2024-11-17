@@ -150,7 +150,6 @@ ORTHOGRAPHIC
 
 --------
 SUBDIV CARTOGRAM
-    import pickle
     with open("oct32-tris-to-cut-list-excl.pickle", "rb") as f:
         tris_to_cut_list = pickle.load(f)
     #with open("oct32-portions-list-50m.pickle", "rb") as f:
@@ -160,10 +159,9 @@ SUBDIV CARTOGRAM
         mesh = subdivide_mesh_selected(mesh, tris_to_cut)
     #portions = portions_list[-1]
     portions = np.load("oct32-subdiv-shifted-50m-portions.npy")
-    cart = cartogram(mesh, portions, POPULATION_ARRAY, 1000000, sphere_first=True, hybrid=True, fix_antimer=True, proj_derivs=mollweide_derivs)
+    cart = cartogram(mesh, portions, POPULATION_ARRAY, sphere_first=True, hybrid=True, fix_antimer=True)
 
 SUBDIV CARTOGRAM PLANE
-    import pickle
     with open("oct32-tris-to-cut-list-excl.pickle", "rb") as f:
         tris_to_cut_list = pickle.load(f)
     with open("oct32-portions-list-50m.pickle", "rb") as f:
@@ -174,7 +172,7 @@ SUBDIV CARTOGRAM PLANE
         mesh = subdivide_mesh_selected(mesh, tris_to_cut)
         mesh_proj = subdivide_mesh_selected(mesh_proj, tris_to_cut)
     portions = portions_list[-1]
-    cart = cartogram(mesh, portions, POPULATION_ARRAY, 1000000, initial_verts=mesh_proj.verts)
+    cart = cartogram(mesh, portions, POPULATION_ARRAY, initial_verts=mesh_proj.verts)
 
 DRAW PLANE
     ang = np.deg2rad(11)
@@ -189,6 +187,32 @@ DRAW PLANE
     set_up_plot()
     plot_mesh(cart)
     plot_polygons(poly_list, is_closed_list)
+	
+    xlim = 4
+    ylim = 2
+    _ = plt.gca().set_xlim(-xlim, xlim)
+    _ = plt.gca().set_ylim(-ylim, ylim)
+	
+DRAW PLANE WITH BOUNDARY
+    ang = np.deg2rad(11)
+    mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
+    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+    
+    poly_list = [matrix_times_array_of_vectors(mat, poly) for poly in poly_list]
+    poly_list, is_closed_list = interrupt_polygon_list_antimeridian(poly_list,
+                                                                is_closed_list,
+                                                                shift_degrees=0)
+    lon_line_ll_0 = np.column_stack([10000 * [-np.pi + 1e-6],
+                                np.linspace(-np.pi/2, np.pi/2, 10000, True)])
+    lon_line_ll_1 = np.column_stack([10000 * [np.pi - 1e-6],
+                                np.linspace(-np.pi/2, np.pi/2, 10000, True)])
+    poly_list.append(lonlat_to_cartes(lon_line_ll_0.T).T)
+    poly_list.append(lonlat_to_cartes(lon_line_ll_1.T).T)
+    is_closed_list += [False, False]
+    poly_list = polys_old_mesh_to_new(poly_list, mesh, cart)
+    set_up_plot()
+    plot_polygons(poly_list, is_closed_list)
+    #plot_mesh(cart)
 	
     xlim = 4
     ylim = 2

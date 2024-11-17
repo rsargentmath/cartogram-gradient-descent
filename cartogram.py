@@ -5,6 +5,7 @@ import json
 from time import perf_counter
 from matplotlib.colors import rgb2hex
 from matplotlib.patches import Polygon
+import pickle
 
 
 rng = np.random.default_rng()
@@ -1319,7 +1320,7 @@ def cartogram(mesh,
               pop_array,
               *,
               max_iterations=1000000,
-              num_phases=6,
+              num_phases=10,
               sphere_first=False,
               hybrid=False,
               fix_antimer=False,
