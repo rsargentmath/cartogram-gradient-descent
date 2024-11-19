@@ -18,8 +18,8 @@ To create a plane cartogram, run:
     portions = np.load("oct32-subdiv-shifted-50m-portions.npy")
     cart = cartogram(mesh, portions, POPULATION_ARRAY, initial_verts=mesh_proj.verts)
 	
-	"""Stuff for drawing the cartogram below"""
-	ang = np.deg2rad(11)
+    """Stuff for drawing the cartogram below"""
+    ang = np.deg2rad(11)
     mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
     poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
     
@@ -57,8 +57,8 @@ To create a sphere cartogram, run:
     portions = np.load("oct32-subdiv-shifted-50m-portions.npy")
     cart = cartogram(mesh, portions, POPULATION_ARRAY, sphere_first=True)
 	
-	"""Stuff for drawing the cartogram below"""
-	ang = np.deg2rad(11)
+    """Stuff for drawing the cartogram below"""
+    ang = np.deg2rad(11)
     mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
     def proj(lonlat):
         return pseudocylindrical(proj_derivs, lonlat)
@@ -96,8 +96,8 @@ To create a hybrid cartogram, run:
     portions = np.load("oct32-subdiv-shifted-50m-portions.npy")
     cart = cartogram(mesh, portions, POPULATION_ARRAY, sphere_first=True, hybrid=True, fix_antimer=True, proj_derivs=proj_derivs)
 	
-	"""Stuff for drawing the cartogram below"""
-	ang = np.deg2rad(11)
+    """Stuff for drawing the cartogram below"""
+    ang = np.deg2rad(11)
     mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
     def proj(lonlat):
         return pseudocylindrical(proj_derivs, lonlat)
