@@ -1,3 +1,9 @@
+This repository is the source code for the upcoming paper "Minimum-Distortion Continuous Cartograms by Numerically Optimized Meshes". The preprint is available at https://rsargentmath.github.io/.
+
+This code is a proof of concept and there is currently no documentation. If you have any questions about the code, feel free to contact me!
+
+The "FIXED" json files are stitched versions of Natural Earth datasets, with duplicate vertices removed and the positive direction changed to anticlockwise.
+
 For information about Liquid Earth, check the commit descriptions in the non-cartogram-hybrid branch.
 
 
