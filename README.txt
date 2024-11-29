@@ -45,7 +45,7 @@ To create a plane cartogram, run:
     _ = plt.gca().set_ylim(-ylim, ylim)
 	
 To create a sphere cartogram, run:
-	proj_derivs = mollweide_derivs # change this to whatever target projection is desired
+    proj_derivs = mollweide_derivs # change this to whatever target projection is desired
     with open("oct32-tris-to-cut-list-excl.pickle", "rb") as f:
         tris_to_cut_list = pickle.load(f)
     #with open("oct32-portions-list-50m.pickle", "rb") as f:
@@ -84,7 +84,7 @@ To create a sphere cartogram, run:
     _ = plt.gca().set_ylim(-ylim, ylim)
 
 To create a hybrid cartogram, run:
-	proj_derivs = mollweide_derivs # change this to whatever target projection is desired
+    proj_derivs = mollweide_derivs # change this to whatever target projection is desired
     with open("oct32-tris-to-cut-list-excl.pickle", "rb") as f:
         tris_to_cut_list = pickle.load(f)
     #with open("oct32-portions-list-50m.pickle", "rb") as f:
