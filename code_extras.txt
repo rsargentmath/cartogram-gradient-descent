@@ -218,3 +218,45 @@ DRAW PLANE WITH BOUNDARY
     ylim = 2
     _ = plt.gca().set_xlim(-xlim, xlim)
     _ = plt.gca().set_ylim(-ylim, ylim)
+	
+GORES
+    ang = np.deg2rad(11)
+    mat = np.array([[np.cos(ang), np.sin(ang), 0], [-np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
+    gores = 24
+    def proj(lonlat):
+        lon, lat = lonlat
+        loncenter = np.floor(gores / (2*np.pi) * (lon + np.pi))
+        loncenter = loncenter * 2*np.pi / gores - np.pi + np.pi / gores
+        return np.array([loncenter + np.cos(lat) * (lon - loncenter), lat])
+    poly_list, is_closed_list = poly_list_from_borders(WORLD_BORDERS_DATA_FLAT)
+    
+    poly_list = [matrix_times_array_of_vectors(mat, poly) for poly in poly_list]
+    poly_list = polys_old_mesh_to_new(poly_list, mesh, cart)
+
+    for i in range(gores):
+        ang = i * 2 * np.pi / gores
+        interrupt_point = np.array([-np.cos(ang), -np.sin(ang), 0])
+        poly_list, is_closed_list = interrupt_polygon_list(poly_list,
+                                                is_closed_list,
+                                                np.array([0, 0, 1]),
+                                                interrupt_point)
+        poly_list, is_closed_list = interrupt_polygon_list(poly_list,
+                                                is_closed_list,
+                                                interrupt_point,
+                                                np.array([0, 0, -1]))
+    
+    poly_list = [proj(cartes_to_lonlat(poly.T)).T for poly in poly_list]
+    set_up_plot()
+    plot_polygons(poly_list, is_closed_list)
+
+    for i in range(gores):
+        lon = i * 2*np.pi / gores - np.pi + np.pi / gores
+        edge = np.linspace(-np.pi/2, np.pi/2, 1000, endpoint=False)
+        edge1 = np.array([lon - np.pi/gores + 1e-8 + 0*edge, edge])
+        edge2 = np.array([lon + np.pi/gores - 1e-8 + 0*edge, -edge])
+        edge = np.concatenate((edge1, edge2), axis=1)
+        plot_polygons([proj(edge).T], [True])
+    xlim = proj(np.array([np.pi, 0]))[0] + 0.01
+    ylim = proj(np.array([0, np.pi/2]))[1] + 0.01
+    _ = plt.gca().set_xlim(-xlim, xlim)
+    _ = plt.gca().set_ylim(-ylim, ylim)
