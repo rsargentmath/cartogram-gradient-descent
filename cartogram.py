@@ -1260,7 +1260,7 @@ def cartogram(mesh,
     region_areas_intended = pop_array / world_pop_density
     region_scales_intended = region_areas_intended / region_areas_og
     land_portions = np.sum(portions, axis=1)
-    A = 1 + 0*tri_scales_blurred(mesh,
+    A = 2 + 0*tri_scales_blurred(mesh,
                            portions,
                            region_scales_intended,
                            num_blurs=256)
@@ -1495,7 +1495,7 @@ def cartogram(mesh,
     weight_boundary = 1e-7
     weights_antimer *= 1
     weight_error = 0
-    """verts_new = minimize(cost_grad_func_maker(weights_dist,
+    verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
                                               weights_antimer,
@@ -1503,25 +1503,10 @@ def cartogram(mesh,
                          verts_new,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
-                         grad_tolerance=1e-4)"""
+                         grad_tolerance=1e-4)
     
     #"""
     weights_dist = 0.1 * weights_water * weights_pop
-    weights_area = 1 * weights_water * weights_pop
-    weight_boundary = 1e-9
-    weights_antimer *= 0.1
-    weight_error = 0
-    """verts_new = minimize(cost_grad_func_maker(weights_dist,
-                                              weights_area,
-                                              weight_boundary,
-                                              weights_antimer,
-                                              weight_error),
-                         verts_new,
-                         iteration_count=max_iterations,
-                         normalize_func=normalize_func,
-                         grad_tolerance=1e-4)"""
-
-    weights_dist = 0.01 * weights_water * weights_pop
     weights_area = 1 * weights_water * weights_pop
     weight_boundary = 1e-9
     weights_antimer *= 0.1
@@ -1535,6 +1520,21 @@ def cartogram(mesh,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
                          grad_tolerance=1e-7)
+
+    weights_dist = 0.01 * weights_water * weights_pop
+    weights_area = 1 * weights_water * weights_pop
+    weight_boundary = 1e-9
+    weights_antimer *= 0.1
+    weight_error = 0
+    """verts_new = minimize(cost_grad_func_maker(weights_dist,
+                                              weights_area,
+                                              weight_boundary,
+                                              weights_antimer,
+                                              weight_error),
+                         verts_new,
+                         iteration_count=max_iterations,
+                         normalize_func=normalize_func,
+                         grad_tolerance=1e-7)"""
     #"""
     if sphere_first:
         set_up_plot(1.02, 1.02)
