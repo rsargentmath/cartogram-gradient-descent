@@ -390,6 +390,16 @@ def mollweide_derivs(x):
     return f, fp, fpp, fppp
 
 
+def new_derivs(x):
+    f, fp, fpp, fppp = equal_earth_derivs(x)
+    g, gp = 1.4 * np.sin(x), 1.4 * np.cos(x)
+    gpp, gppp = -g, -gp
+    return (0.3 * f + 0.7 * g,
+            0.3 * fp + 0.7 * gp,
+            0.3 * fpp + 0.7 * gpp,
+            0.3 * fppp + 0.7 * gppp)
+
+
 def pseudocylindrical(derivs_func, lonlat):
     l, x = lonlat
     f, fp, _, _ = derivs_func(x)
@@ -1465,7 +1475,9 @@ def cartogram(mesh,
         raise ValueError
 
     is_water = land_portions < TOLERANCE
-    weights_water = np.where(is_water, 0.01, 1)
+    is_ant = mesh.verts[mesh.tris[:, 0], 2] < -0.85
+    weights_ant = np.where(is_ant, 0.1, 1)
+    weights_water = np.where(is_water, 0.01, weights_ant)
     weights_pop = 0.2 + 0.8 * A
     antimer = np.logical_and(mesh.verts[:, 0] < TOLERANCE,
                              np.abs(mesh.verts[:, 1]) < TOLERANCE)
@@ -1478,7 +1490,7 @@ def cartogram(mesh,
     weights_dist = 1 * weights_water * weights_pop
     weights_area = 0.1 * weights_water * weights_pop
     weight_boundary = 1e-7
-    weights_antimer = 100 * weights_antimer
+    weights_antimer = 200 * weights_antimer
     weight_error = 0
     """verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
@@ -1495,7 +1507,7 @@ def cartogram(mesh,
     weight_boundary = 1e-7
     weights_antimer *= 1
     weight_error = 0
-    verts_new = minimize(cost_grad_func_maker(weights_dist,
+    """verts_new = minimize(cost_grad_func_maker(weights_dist,
                                               weights_area,
                                               weight_boundary,
                                               weights_antimer,
@@ -1503,10 +1515,10 @@ def cartogram(mesh,
                          verts_new,
                          iteration_count=max_iterations,
                          normalize_func=normalize_func,
-                         grad_tolerance=1e-4)
+                         grad_tolerance=1e-4)"""
     
     #"""
-    weights_dist = 0.1 * weights_water * weights_pop
+    weights_dist = 0.3 * weights_water * weights_pop
     weights_area = 1 * weights_water * weights_pop
     weight_boundary = 1e-9
     weights_antimer *= 0.1
